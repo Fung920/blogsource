@@ -1,0 +1,65 @@
+---
+layout: post
+title: 无备份恢复丢失的数据文件
+categories:
+- oracle
+tags:
+- recovery
+published: true
+comments: false
+date: 2013-08-30
+---
+ 1.环境模拟：Archive log模式下，无数据库备份，但有完整archivelog，模拟数据文件直接被OS命令删除，进行完全恢复的情况。
+<!--more-->
+```
+[ora10g@db12c:/oradata/ora10g]$ sqlplus "/as sysdba" 
+SQL*Plus: Release 10.2.0.4.0 - Production on Fri Aug 30 10:26:06 2013 
+Copyright (c) 1982, 2007, Oracle.  All Rights Reserved. 
+Connected to an idle instance. 
+SQL> startup 
+ORACLE instance started. 
+Total System Global Area  599785472 bytes 
+Fixed Size                  2085776 bytes 
+Variable Size             163581040 bytes 
+Database Buffers          427819008 bytes 
+Redo Buffers                6299648 bytes 
+Database mounted. 
+ORA-01157: cannot identify/lock data file 5 - see DBWR trace file 
+ORA-01110: data file 5: '/oradata/ora10g/test01.dbf' 
+SQL> archive log list; 
+Database log mode              Archive Mode 
+Automatic archival             Enabled 
+Archive destination            /u01/oracle/product/10gr2/dbs/arch 
+Oldest online log sequence     25 
+Next log sequence to archive   27 
+Current log sequence           27 
+```
+2.重新创建丢失的数据文件 
+```
+SQL> select name from v$datafile; 
+
+ NAME 
+-------------------------------------------------------------------------------- 
+/oradata/ora10g/system01.dbf 
+/oradata/ora10g/undotbs01.dbf 
+/oradata/ora10g/sysaux01.dbf 
+/oradata/ora10g/users01.dbf 
+/oradata/ora10g/test01.dbf 
+
+SQL> alter database create datafile '/oradata/ora10g/test01.dbf'; 
+Database altered. 
+
+SQL> recover datafile 5; 
+ORA-00279: change 379376 generated at 08/30/2013 10:14:43 needed for thread 1 
+ORA-00289: suggestion : /u01/oracle/product/10gr2/dbs/arch1_24_824210512.dbf 
+ORA-00280: change 379376 for thread 1 is in sequence #24 
+
+Specify log: {<ret>=suggested | filename | AUTO | CANCEL} 
+auto 
+Log applied. 
+Media recovery complete.</ret> 
+
+SQL> alter database open; 
+```
+
+ 参考：<a href="http://www.eygle.com/archives/2004/10/recover_without_datafile_backup.html" title="http://www.eygle.com/archives/2004/10/recover_without_datafile_backup.html" target="_blank">http://www.eygle.com/archives/2004/10/recover_without_datafile_backup.html</a> 

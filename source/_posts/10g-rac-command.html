@@ -1,0 +1,220 @@
+---
+layout: post
+title: 10g rac管理命令
+categories:
+- oracle
+tags:
+- rac
+published: true
+comments: false
+date: 2014-04-01
+---
+ 10g RAC管理命令简介《大话Oracle RAC》
+<!--more-->
+ <h3>1.olsnode</h3>
+olsnode显示集群节点信息列表。
+```
+[oracle@oel1:/home/oracle]$ olsnodes -h
+Usage: olsnodes [-n] [-p] [-i] [<node> | -l] [-g] [-v]
+        where
+                -n print node number with the node name
+                -p print private interconnect name with the node name
+                -i print virtual IP name with the node name
+                <node> print information for the specified node
+                -l print information for the local node
+                -g turn on logging
+                -v run in verbose mode
+[oracle@oel1:/home/oracle]$ olsnodes -n -i -p
+oel1    1       orcl1-prv       orcl1-vip.oraclema.com
+oel2    2       orcl2-prv       orcl2-vip.oraclema.com
+```
+<h3>2.oifcfg</h3>
+oifcfg用来管理网络组件，包括两张物理网卡和三个IP地址。
+```
+[oracle@oel1:/home/oracle]$ oifcfg iflist
+eth0  192.168.56.0
+eth1  10.10.56.0
+[oracle@oel1:/home/oracle]$ oifcfg getif
+eth0  192.168.56.0  global  public
+eth1  10.10.56.0  global  cluster_interconnect
+```
+以上输出表面eth0网段为192.168.56.0，属于Public类型IP，及VIP及Public IP，eth1为心跳网卡。<br />
+添加新网卡，setif不会去检查是否存在物理网卡，以下命令表示为集群添加网段为10.0.0.0，类型为Public的网卡test0
+```
+[oracle@oel1:/home/oracle]$ oifcfg setif -global test0/10.0.0.0:public
+#查看主机网络配置，明显没有test0这张网卡
+[root@oel1:/]# ip ad sh
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 16436 qdisc noqueue
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast qlen 1000
+    link/ether 08:00:27:63:8f:74 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.56.123/24 brd 192.168.56.255 scope global eth0
+    inet 192.168.56.125/24 brd 192.168.56.255 scope global secondary eth0:1
+    inet 192.168.56.126/24 brd 192.168.56.255 scope global secondary eth0:2
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast qlen 1000
+    link/ether 08:00:27:55:44:e5 brd ff:ff:ff:ff:ff:ff
+inet 10.10.56.123/24 brd 10.10.56.255 scope global eth1
+#但在Cluster配置中已经有了这个网卡
+[oracle@oel1:/home/oracle]$ oifcfg getif
+eth0  192.168.56.0  global  public
+eth1  10.10.56.0  global  cluster_interconnect
+test0  10.0.0.0  global  public
+#删除网卡配置
+[oracle@oel1:/home/oracle]$ oifcfg delif -global test0
+[oracle@oel1:/home/oracle]$ oifcfg getif
+eth0  192.168.56.0  global  public
+eth1  10.10.56.0  global  cluster_interconnect
+```
+<h3>3.crsctl/ocrcheck/ocrdump/ocrconfig</h3>
+crsctl在10g中功能较少，但在11g中已经取代了crs_stat，功能大大增强了。10g常用的几个如下：
+```
+#检测crs运行状况
+[oracle@oel1:/home/oracle]$ crsctl check crs
+CSS appears healthy
+CRS appears healthy
+EVM appears healthy
+#检查votedisk磁盘设置
+[oracle@oel1:/home/oracle]$ crsctl query css votedisk
+ 0.     0    /dev/raw/raw3
+ 1.     0    /dev/raw/raw4
+ 2.     0    /dev/raw/raw5
+
+located 3 votedisk(s).
+#设置crs随机启动，这个需要以root权限运行
+[root@oel1:/root]# /u01/app/oracle/product/crs/bin/crsctl enable crs
+#其实是修改了下面这个文档属性：
+[root@oel1:/root]# cat /etc/oracle/scls_scr/oel1/root/crsstart
+enable
+```
+OCR是存放集群配置信息的地方，是Oracle RAC防止集群健忘症关键机制。在整个集群中，只能有一个主节点(Master Node)对OCR进行读写，其他节点在内存中保留一个OCR拷贝。当集群配置修改时候，主节点会自动同步修改到其他节点。<br />
+ocrdump以ASCII方式打印出OCR内容，因此dump出的内容是不能够作为备份恢复的。<br />
+ocrcheck用于检查OCR内容的一致性，这个命令不需要参数。
+```
+[oracle@oel1:/home/oracle]$ ocrcheck
+Status of Oracle Cluster Registry is as follows :
+         Version                  :          2
+         Total space (kbytes)     :     200560
+         Used space (kbytes)      :       4592
+         Available space (kbytes) :     195968
+         ID                       :  841952053
+         Device/File Name         : /dev/raw/raw1
+                                    Device/File integrity check succeeded
+         Device/File Name         : /dev/raw/raw2
+                                    Device/File integrity check succeeded
+
+          Cluster registry integrity check succeeded
+#上述输出结果是OCR一致，但如果不一致，会在某个OCR盘上出现
+#”Device/File needs to be synchronized with the other device”
+[oracle@oel1:/home/oracle]$ cat /etc/oracle/ocr.loc
+ocrconfig_loc=/dev/raw/raw1
+ocrmirrorconfig_loc=/dev/raw/raw2
+local_only=FALSE
+```
+ocrconfig命令用于维护OCR磁盘。
+```
+[oracle@oel1:/home/oracle]$ ocrconfig -h
+Name:
+        ocrconfig - Configuration tool for Oracle Cluster Registry.
+
+ Synopsis:
+        ocrconfig [option]
+        option:
+                -export <filename> [-s online]
+                                                    - Export cluster register contents to a file
+                -import <filename>                  - Import cluster registry contents from a file
+                -upgrade [<user> [<group>]]
+                                                    - Upgrade cluster registry from previous version
+                -downgrade [-version <version string>]
+                                                    - Downgrade cluster registry to the specified version
+                -backuploc <dirname>                - Configure periodic backup location
+                -showbackup                         - Show backup information
+                -restore <filename>                 - Restore from physical backup
+                -replace ocr|ocrmirror [<filename>] - Add/replace/remove a OCR device/file
+                -overwrite                          - Overwrite OCR configuration on disk
+                -repair ocr|ocrmirror <filename>    - Repair local OCR configuration
+                -help                               - Print out this help information
+
+ Note:
+        A log file will be created in
+        $ORACLE_HOME/log/<hostname>/client/ocrconfig_<pid>.log. Please ensure
+        you have file creation privileges in the above directory before
+        running this tool.
+#查看自动备份
+[oracle@oel1:/home/oracle]$ ocrconfig -showbackup
+#导出ocr备份，需要以root用户执行
+[root@oel1:/root]# /u01/app/oracle/product/crs/bin/ocrconfig -export /tmp/ocr2.dmp -s online
+#恢复ocr，同样要用root执行，恢复前建议先停止crs
+[root@oel1:/root]# /u01/app/oracle/product/crs/bin/ocrconfig -import /tmp/ocr2.dmp
+#添加ocr mirror disk
+[root@oel1:/root]# /u01/app/oracle/product/crs/bin/ocrconfig -replace ocrmirror /dev/raw/raw21
+```
+<h3>4.srvctl/crs_stat</h3>
+crs_stat用于查看CRS维护的所有资源的运行状态，最常用的莫过于crs_stat -t。此命令比较简单。
+srvctl是集群中维护最常见也是最复杂的命令，
+```
+#查看数据库配置
+[oracle@oel1:/home/oracle]$ srvctl config database -d orcl -a
+oel1 orcl1 /u01/app/oracle/product/10.2.0/db_1
+oel2 orcl2 /u01/app/oracle/product/10.2.0/db_1
+DB_NAME: orcl
+ORACLE_HOME: /u01/app/oracle/product/10.2.0/db_1
+SPFILE: +DATA/orcl/spfileorcl.ora
+DOMAIN: null
+DB_ROLE: null
+START_OPTIONS: null
+POLICY:  AUTOMATIC
+ENABLE FLAG: DB ENABLED
+#删除/添加数据库/实例到Clusterware中
+--删除
+$srvctl remove instance -d orcldb -i orcldb1
+$srvctl remove instance -d orcldb -i orcldb2
+$srvctl remove database -d orcldb
+--添加
+$ srvctl add database -d orcldb -o /u01/app/oracle/products/10.2.0/db
+$srvctl remove instance -d orcldb -i orcldb1
+$srvctl remove instance -d orcldb -i orcldb2
+#添加service
+$srvctl add service -d orcl -s orcl_taf -r orcl1,orcl2 -P BASIC
+--启动
+$srvctl start service -d orcl -s orcl_taf
+其他的详细用法可参照srvctl -h。
+```
+<h3>5.附录</h3>
+OCR及Votedisk全部丢失且无备份情况下恢复Cluster。Clusterware是一种集群管理软件，在DBA的世界中，Oracle的Clusterware就是专门管理RAC的，虽然Oracle说可以用它管理其他集群，但是我还没见过其他集群底层跑Oracle的Clusterware管理的。RAC是多实例共享一个数据库的集群。因此，RAC可以说既可以托管于Clusterware，又独立于Clusterware。OCR及Votedisk只是保留集群配置及投票信息的。因此，在数据库没损坏的情况下，是可以重新构建Clusterware底层，以达到恢复目的的。在10g升级11g的过程中，同样可以用这个道理先装好11g的GI，用GI管理10g的集群，最后再升级DB。
+<br />
+以下为重构过程：
+```
+#停止所有节点CRS
+crsctl stop crs
+#以root用户执行CRS_HOME下脚本，删除集群节点信息
+[root@oel1:/root]# /u01/app/oracle/product/crs/install/rootdelete.sh
+#在节点1执行以下脚本
+[root@oel1:/root]# /u01/app/oracle/product/crs/install/rootdeinstall.sh
+#继续在上述同一个节点执行脚本
+[root@oel1:/root]# /u01/app/oracle/product/crs/root.sh
+#其他节点执行上述脚本，注意最后的输出
+[root@oel2:/root]# /u01/app/oracle/product/crs/root.sh
+#netca配置监听，确认注册到了Clusterware
+#添加ASM、数据库，实例到新的Clusterware
+srvctl add asm -n oel1,-i +ASM1 -o $ORACLE_HOME
+srvctl add asm -n oel2,-i +ASM2 -o $ORACLE_HOME
+#手工添加Private IP到ASM实例的pfile中，启动ASM实例
++ASM1.cluster_interconnects='10.10.56.123'
++ASM2.cluster_interconnects='10.10.56.124'
+srvctl start asm -n oel1
+srvctl start asm -n oel2
+#添加数据库，实例到集群中
+srvctl add database -d orcl -o /u01/app/oracle/product/10.2.0/db_1
+srvctl add instance -d orcl -i orcl1 -n oel1
+srvctl add instance -d orcl -I orcl2 -n oel2
+#修改实例和ASM的依赖关系
+srvctl modify instance -d orcl -i orcl1 -s +ASM1
+srvctl modify instance -d orcl -i orcl2 -s +ASM2
+```
+```
+#启动数据库前修改Private IP地址
+SQL> alter system set cluster_interconnects='10.10.56.123' scope=spfile sid='orcl1';
+SQL> alter system set cluster_interconnects='10.10.56.124' scope=spfile sid='orcl2';
+srvctl start database -d orcl
+```

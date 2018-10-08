@@ -1,0 +1,410 @@
+---
+layout: post
+title: oracle TAF
+categories:
+- oracle
+tags: []
+published: true
+comments: false
+date: 2014-03-30
+---
+ <h1>1.TAF简介</h1>
+Transparent application failover，即对应用透明的故障切换，是Oracle8i以后推出的基于客户端的HA应用。在RAC环境中，如果实例挂了一个，应用可以通过TAF配置无缝切换。
+<!--more-->
+ 在Oracle中，有三种FAILOVER方式，一种是Client-Side Connect time Failover，一种为TAF，一种为Server-Side TAF。<br />
+
+ Client-Side如果客户端配置了多个IP，客户端请求连接时，会先尝试地址表中的第一个地址，如果连接失败，则继续尝试第二个地址，以此类推。如果连接过程中某个实例挂掉了，则客户端需要重新连接才能继续操作。启用这种Failover方式是在客户端的tnsnames中添加FAILOVER=ON条目。但默认为开启，即使不添加，也默认为打开状态。<br />
+
+ TAF则在客户端tnsnames配置文件中添加TAF参数，具体参数见后续说明。这样的话，在当前连接的实例挂掉的时候，客户端会自动连接到其他可用实例中，而不用重新连接。<br />
+这两种配置的tnsnames范例如下：
+```
+#Client-Side：
+orcl_test =
+  (DESCRIPTION =
+    (ADDRESS_LIST =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.56.125)(PORT = 1521))
+      (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.56.126)(PORT = 1521))
+      (LOAD_BALANCE = YES)
+    )
+    (CONNECT_DATA =
+      (SERVICE_NAME = orcl)
+    )
+  )
+#TAF：
+orcl_taf =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.56.125)(PORT = 1521))
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.56.126)(PORT = 1521))
+    (LOAD_BALANCE = yes)
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+      (FAILOVER_MODE =
+        (TYPE = SELECT)
+        (METHOD = BASIC)
+        (RETRIES = 180)
+        (DELAY = 5)
+      )
+    )
+  )
+```
+请先看这两种方式的FAILOVER方式，因实验环境配置了Server-Side的TAF，先把对应的TAF Service停止掉：
+```
+[oracle@oel1:/home/oracle]$ srvctl stop service -d orcl -s orcl_taf -i orcl1
+[oracle@oel1:/home/oracle]$ srvctl stop service -d orcl -s orcl_taf -i orcl2
+[oracle@oel1:/home/oracle]$ srvctl disable service -d orcl -s orcl_taf -i orcl1
+[oracle@oel1:/home/oracle]$ srvctl disable service -d orcl -s orcl_taf -i orcl2
+[oracle@oel1:/home/oracle]$ crs_stat -t
+Name           Type           Target    State     Host
+------------------------------------------------------------
+ora....SM1.asm application    ONLINE    ONLINE    oel1
+ora....L1.lsnr application    ONLINE    ONLINE    oel1
+ora.oel1.gsd   application    ONLINE    ONLINE    oel1
+ora.oel1.ons   application    ONLINE    ONLINE    oel1
+ora.oel1.vip   application    ONLINE    ONLINE    oel1
+ora....SM2.asm application    ONLINE    ONLINE    oel2
+ora....L2.lsnr application    ONLINE    ONLINE    oel2
+ora.oel2.gsd   application    ONLINE    ONLINE    oel2
+ora.oel2.ons   application    ONLINE    ONLINE    oel2
+ora.oel2.vip   application    ONLINE    ONLINE    oel2
+ora.orcl.db    application    ONLINE    ONLINE    oel1
+ora....l1.inst application    ONLINE    ONLINE    oel1
+ora....l2.inst application    ONLINE    ONLINE    oel2
+ora...._taf.cs application    OFFLINE   OFFLINE
+ora....cl1.srv application    OFFLINE   OFFLINE
+ora....cl2.srv application    OFFLINE   OFFLINE
+```
+同时添加上述tns到Clinet端的tnsnames中。开两个窗口，分别通过CS及TAF模式连接，查看连接模式：
+``` sql
+[oracle@oel1:/home/oracle]$ sqlplus system/oracle@orcl_test
+
+ SQL> select username,failover_type,failover_method
+  2  from v$session where username='SYSTEM';
+
+ USERNAME                       FAILOVER_TYPE FAILOVER_M
+------------------------------ ------------- ----------
+SYSTEM                         NONE          NONE
+SQL> select instance_name from v$instance;
+
+ INSTANCE_NAME
+----------------
+orcl2
+
+ [oracle@oel1:/home/oracle]$ sqlplus system/oracle@orcl_taf
+SQL> select username,failover_type,failover_method
+  2  from v$session where username='SYSTEM';
+
+ USERNAME                       FAILOVER_TYPE FAILOVER_M
+------------------------------ ------------- ----------
+SYSTEM                         SELECT        BASIC
+SQL>  select instance_name from v$instance;
+
+ INSTANCE_NAME
+----------------
+orcl2
+```
+通过服务器端直接kill掉这两个进程：
+``` sql
+SQL> select pid,spid from v$process
+  2  where addr in
+  3  (select paddr from v$session
+  4  where username='SYSTEM');
+
+        PID SPID
+---------- ------------
+        22 8009
+        31 6694
+#两个进程的OS pid分别为8009和6694，调用OS kill命令直接杀死两个进程
+[oracle@oel2:/home/oracle]$ ps -ef|grep 8009
+oracle    8009     1  0 16:34 ?        00:00:00 oracleorcl2 (LOCAL=NO)
+oracle    9583  8707  0 16:38 pts/0    00:00:00 grep 8009
+[oracle@oel2:/home/oracle]$ ps -ef|grep 6694
+oracle    6694     1  0 16:30 ?        00:00:00 oracleorcl2 (LOCAL=NO)
+oracle    9610  8707  0 16:38 pts/0    00:00:00 grep 6694
+[oracle@oel2:/home/oracle]$ kill -9 8009
+[oracle@oel2:/home/oracle]$ kill -9 6694
+```
+返回窗口，执行SQL：
+``` sql
+#Client-Side配置：
+SQL> select instance_name from v$instance;
+select instance_name from v$instance
+*
+ERROR at line 1:
+ORA-03113: end-of-file on communication channel
+
+ SQL> select instance_name from v$instance;
+ERROR:
+ORA-03114: not connected to ORACLE
+
+ #TAF配置：
+SQL> select instance_name from v$instance;
+select instance_name from v$instance
+*
+ERROR at line 1:
+ORA-03113: end-of-file on communication channel
+
+ SQL> select instance_name from v$instance;
+
+ INSTANCE_NAME
+----------------
+orcl1
+```
+第三种Failover配置为Server-Side TAF，这是配置在服务器端的，在这种配置下，客户端可以不用tns就可以使用到TAF的好处。下面以Oracle 10g为例，说明TAF Server-side的配置。
+<h1>2.配置信息</h1>
+Server端：
+```
+[oracle@oel1:/u01/app/oracle/product/10.2.0/db_1/network/admin]$ cat tnsnames.ora
+# tnsnames.ora Network Configuration File: /u01/app/oracle/product/10.2.0/db_1/network/admin/tnsnames.ora
+# Generated by Oracle configuration tools.
+
+ RACDB_TAF =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.56.125)(PORT = 1521))
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.56.126)(PORT = 1521))
+    (LOAD_BALANCE = yes)
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl_taf)
+      (FAILOVER_MODE =
+        (TYPE = SELECT)
+        (METHOD = BASIC)
+        (RETRIES = 180)
+        (DELAY = 5)
+      )
+    )
+  )
+
+ LISTENERS_ORCL =
+  (ADDRESS_LIST =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = orcl1-vip)(PORT = 1521))
+    (ADDRESS = (PROTOCOL = TCP)(HOST = orcl2-vip)(PORT = 1521))
+  )
+
+ EXTPROC_CONNECTION_DATA =
+  (DESCRIPTION =
+    (ADDRESS_LIST =
+      (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC0))
+    )
+    (CONNECT_DATA =
+      (SID = PLSExtProc)
+      (PRESENTATION = RO)
+    )
+  )
+```
+<h1>3.切换测试</h1>
+查看当前实例信息：
+```sql
+SQL> COLUMN instance_name    FORMAT a13
+COLUMN host_name        FORMAT a9
+COLUMN failover_method  FORMAT a15
+COLUMN failed_over      FORMAT a11
+SELECT
+    instance_name
+  , host_name
+  , NULL AS failover_type
+  , NULL AS failover_method
+  , NULL AS failed_over
+FROM v$instance
+UNION
+SELECT
+    NULL
+  , NULL
+  , failover_type
+  , failover_method
+  , failed_over
+FROM v$session
+WHERE username = 'SYSTEM';
+INSTANCE_NAME HOST_NAME FAILOVER_TYPE FAILOVER_METHOD FAILED_OVER
+------------- --------- ------------- --------------- -----------
+orcl1           oel1          SELECT        BASIC            NO
+```
+保持上述窗口不变，停止当前实例：
+```
+[oracle@oel1:/home/oracle]$ srvctl status database -d orcl
+Instance orcl1 is running on node oel1
+Instance orcl2 is running on node oel2
+[oracle@oel1:/home/oracle]$ srvctl stop instance -d orcl -i orcl1 -o abort
+[oracle@oel1:/home/oracle]$ srvctl status database -d orcl
+Instance orcl1 is not running on node oel1
+Instance orcl2 is running on node oel2
+```
+回到上个SQL窗口，再次查询：
+```
+INSTANCE_NAME HOST_NAME FAILOVER_TYPE FAILOVER_METHOD FAILED_OVER
+------------- --------- ------------- --------------- -----------
+orcl2         oel2         SELECT          BASIC              YES
+```
+从v$session中查询的结果可以看到，FAILED_OVER从原来的“NO”变成了”YES”，也就是说，这个会话是经过故障转移重新连接的会话。
+<h1>4.参数及含义</h1>
+在上述TNS配置中，在FAILOVER_MODE中有如下几个参数：
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="127"><b>参数</b><b></b></td>
+<td valign="top" width="441"><b>描述</b><b></b></td>
+</tr>
+<tr>
+<td valign="top" width="127">BACKUP</td>
+<td valign="top" width="441">指定备用连接所用到的service name，在PRECONNECT模式中，必须要添加此参数。在BASIC模式中，强烈建议添加此参数，会减少因重连失败实例而带来的延时。</td>
+</tr>
+<tr>
+<td valign="top" width="127">TYPE</td>
+<td valign="top" width="441">指定故障切换的类型。OCI默认有三种切换类型。此参数只能通过dbms包修改。
+<ul>
+	<li><b>SESSION </b>只是切换当前会话。即会话不会中断，但是查询语句需要重新执行。<b></b></li>
+	<li><b>SELECT </b>SELECT模式，用户当前正在执行的SELECT语句会被转移到新的实例上，在新的节点继续返回后续结果。<b></b></li>
+	<li><b>NONE </b>表示不会进行任何切换操作，这是默认的模式。<b></b></li>
+</ul>
+</td>
+</tr>
+<tr>
+<td valign="top" width="127">METHOD</td>
+<td valign="top" width="441">此参数决定从主节点到备用节点故障切换的速度。
+<ul>
+	<li><b>BASIC</b> 检测到故障时建立连接。</li>
+	<li><b>PRECONNECT</b> 预先建立连接，一开始创建会话连接就连接到所有实例，当发生故障时，立刻可以快速切换到其他实例上。</li>
+</ul>
+</td>
+</tr>
+<tr>
+<td valign="top" width="127">RETRIES</td>
+<td valign="top" width="441">节点故障时，重新尝试连接备用节点的次数。此参数只能通过dbms包修改。</td>
+</tr>
+<tr>
+<td valign="top" width="127">DELAY</td>
+<td valign="top" width="441">节点故障时，重新尝试连接备用节点的时间。此参数只能通过dbms包修改。</td>
+</tr>
+</tbody>
+</table>
+&nbsp;
+<h1>5. 配置步骤</h1>
+使用dbca配置：
+<ol>
+	<li>通过dbca设置一个新的service name，称为orcl_taf</li>
+	<li>在欢迎界面，选择Oracle Real Application Cluster database，选择下一步</li>
+	<li>选择Service Management，选择下一步</li>
+	<li>选中需要修改的RAC数据库，选择下一步</li>
+	<li>点击Add，添加新的service name：orcl_taf</li>
+	<li>选择PREFERED，点击完成。</li>
+	<li>添加orcl_taf服务到tnsnames.ora中。</li>
+</ol>
+说明：在第五步中，PREFERRED跟AVALIABLE表示首选实例及后备实例。客户端会优先使用首选实例。因srvctl添加服务只会更新OCR信息而不会更新data dictionary及listener信息，还需要调用dbms包去更新信息，因此，建议通过dbca对Service进行更改。<br />
+
+ 命令行添加，添加另一个名为ORCL_TEST的服务：
+<ol>
+	<li>首先添加服务</li>
+</ol>
+```
+[oracle@oel1:/home/oracle]$ srvctl add service -h
+Usage: srvctl add service -d <name> -s <service_name> -r "<preferred_list>" [-a "<available_list>"] [-P <taf_policy>]
+    -d <name>           Unique name for the database
+    -s <service>        Service name
+    -r "<pref_list>"    List of preferred instances
+    -a "<avail_list>"   List of available instances
+    -P <taf_policy>     TAF policy (NONE, BASIC, or PRECONNECT)
+Usage: srvctl add service -d <name> -s <service_name> -u {-r "<new_pref_inst>" | -a "<new_avail_inst>"}
+    -d <name>           Unique name for the database
+    -s <service>        Service name
+    -u                  Add a new instance to service configuration
+    -r <new_pref_inst>  Name of new preferred instance
+    -a <new_avail_inst> Name of new available instance
+    -h                  Print usage
+[oracle@oel1:/home/oracle]$ srvctl add service -d orcl -s orcl_test -r orcl1,orcl2 -P BASIC
+```
+启动服务
+```
+[oracle@oel1:/home/oracle]$ srvctl start service -d orcl -s orcl_test
+```
+执行dbms包，创建service
+``` sql
+SQL>
+Begin
+Dbms_service.modify_service(
+Service_name=>'orcl_test',
+Failover_method=>dbms_service.failover_method_basic,
+Failover_type=>dbms_service.failover_type_select,
+Failover_retries=>180,
+Failover_delay=>5
+);
+End;
+/
+PL/SQL procedure successfully completed.
+```
+查看配置结果
+``` sql
+SQL> show parameter name
+
+ NAME                                 TYPE        VALUE
+------------------------------------ ----------- ------------------------------
+db_file_name_convert                 string
+db_name                              string      orcl
+db_unique_name                       string      orcl
+global_names                         boolean     FALSE
+instance_name                        string      orcl1
+lock_name_space                      string
+log_file_name_convert                string
+service_names                    string      orcl_taf, orcl, orcl_test
+```
+查看监听服务信息
+```
+[oracle@oel1:/home/oracle]$ lsnrctl service
+Service "orcl_test" has 2 instance(s).
+  Instance "orcl1", status READY, has 2 handler(s) for this service...
+    Handler(s):
+      "DEDICATED" established:0 refused:0 state:ready
+         REMOTE SERVER
+         (ADDRESS=(PROTOCOL=TCP)(HOST=oel1)(PORT=1521))
+      "DEDICATED" established:0 refused:0 state:ready
+         LOCAL SERVER
+  Instance "orcl2", status READY, has 1 handler(s) for this service...
+    Handler(s):
+      "DEDICATED" established:0 refused:0 state:ready
+         REMOTE SERVER
+         (ADDRESS=(PROTOCOL=TCP)(HOST=oel2)(PORT=1521))
+The command completed successfully
+```
+<h1>6.总结</h1>
+在Oracle 11g中，增加了SCAN-IP，即如果在Oracle中配置了DNS的SCAN的话，可以直接通过DNS进行负载均衡和故障切换，而大部分用户都是没有使用DNS的SCAN的，而是使用HOSTS文件进行解析。在11g RAC中，dbca已经没有service Management选项了，因此，要添加类似10g的Server-side的taf必须通过命令行去添加。<br />
+
+ 补充：删除服务
+    停止服务
+```
+[oracle@oel1:/home/oracle]$ srvctl stop service -d orcl -s orcl_test
+```
+删除服务
+```
+[oracle@oel1:/home/oracle]$ srvctl remove service -d orcl -s orcl_test
+orcl_test PREF: orcl1 orcl2 AVAIL:
+Remove service orcl_test from the database orcl? (y/[n]) y
+```
+查看数据字典内容
+``` sql
+SQL> select name,failover_method,failover_type,goal,clb_goal from dba_services;
+
+ NAME            FAILOVER_METHOD      FAILOVER_TYPE        GOAL         CLB_G
+--------------- -------------------- -------------------- ------------ -----
+SYS$BACKGROUND                                            NONE         SHORT
+SYS$USERS                                                 NONE         SHORT
+orcl                                                                   LONG
+orcl_taf                                                  NONE         LONG
+orcl_test       BASIC                SELECT               NONE         LONG
+```
+删除数据字典内容
+``` sql
+SQL> begin
+dbms_service.delete_service(service_name=>'orcl_test');
+end;
+/
+PL/SQL procedure successfully completed.
+SQL> select name,failover_method,failover_type,goal,clb_goal from dba_services;
+
+ NAME            FAILOVER_METHOD      FAILOVER_TYPE        GOAL         CLB_G
+--------------- -------------------- -------------------- ------------ -----
+SYS$BACKGROUND                                            NONE         SHORT
+SYS$USERS                                                 NONE         SHORT
+orcl                                                                   LONG
+orcl_taf                                                  NONE         LONG
+```
+
+ How To Configure Server Side Transparent Application Failover [ID 460982.1]

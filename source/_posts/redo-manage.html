@@ -1,0 +1,330 @@
+---
+layout: post
+title: 管理redo文件
+categories:
+- oracle
+tags:
+- redo
+published: true
+comments: false
+date: 2014-03-21
+---
+ Oracle 的Online redo log 是为确保已经提交的事务不会丢失而建立的一个机制。 因为这种健全的机制，才能让我们在数据库crash时，恢复数据，保证数据不丢失。
+<!--more-->
+<h1>1.Redo简介</h1>
+<p>REDO为oracle重做机制，redo log最重要的功能是记录所有对数据库的修改信息，这些信息可用于实例崩溃的恢复。在数据库中，redo的功能主要通过三个组件来实现：redo log buffer，LGWR和redo log file。</p> 
+
+ <p>Redo log buffer为SGA内存结构，允许用户进程将他们的redo entries(重做条目)写入内存以便加速对数据库修改的追踪，redo log buffer避免了用户进程额外花时间将重做条目直接写入磁盘，而是将所有用户进程产生的重做条目写入内存，从而避免导致数据库性能下降的磁盘资源的争用。</p>  
+
+ <p>Redo Entries包含了由于增删改DML及create、alter或drop所做的修改操作而需要对数据库重新组织或重做的必须信息。这些信息在必要时可用用于数据库的恢复。</p> 
+<h1>2.为什么要有redo</h1>
+<p>Redo的作用是能保证数据库的回退性。其工作机制与LGWR，CKPT，DBWn密不可分。首先说说DBWn，将内存数据写入磁盘是一个相当复杂的过程，在此过程中，首先要保证安全，所谓安全，就是在写的过程中，如果发生实例崩溃，要有一套完整的机制保证用户已提交但尚未写入磁盘的数据不丢失；再者也要保证写的效率，磁盘I/O是最昂贵的操作，应该尽可能的将内存的脏数据收集到一定程度，再批量写入。</p> 
+
+<p>这种机制确实大大提高了性能，但可以想象的是，当实例崩溃，必然导致部分已提交但尚未写入磁盘的数据丢失。那么该如何保证这些脏数据的安全性呢？于是Oracle引进redo机制，通过连续的、顺序的日志条目写出，而将随机的、分散的数据块写出推延。跟redo log buffer一样，redo log file也是循环使用的。当一个日志文件写满，会发生日志切换动作，此时，数据库会发生一个检查点事件(Checkpoint)，Checkpoint会促使DBWn进程将已经写入日志文件记录的脏数据写回磁盘。</p>  
+
+ <p>由于redo机制的保护，当实例崩溃时候，Oracle可以通过redo重演进行数据恢复。此时又会产生一个问题：该从何时恢复呢？</p>  
+
+ <p>如果读取的redo过多，恢复时间必然过长；如果读取的redo太少，也意味着DBWn写太频繁，导致IO过高，这也是不合理的。为了确定这个恢复的时间点，Oracle引进了CKPT这个后台进程。</p>  
+
+ <p>当Checkpoint发生时，DBWn会从内存写脏数据到磁盘，Checkpoint完成后，CKPT进程会相应的更新控制文件和数据文件头，记录检查点信息。因此，在这个Checkpoint前的所有数据都保证已经写入磁盘了，此后的实例崩溃，则只需要从最后一次完成的Checkpoint恢复即可。</p> 
+<h1>3.Redo Log File的管理</h1>
+<h2>3.1.查找日志文件</h2>
+```
+SQL> select thread#,v$log.group#,v$logfile.type,member 
+from v$log,v$logfile 
+where v$log.group#=v$logfile.group#; 
+THREAD#     GROUP# TYPE    MEMBER 
+---------- ---------- ------- -------------------------------------------------- 
+1          1 ONLINE  +DATA/racdb/onlinelog/group_1.257.837708897 
+1          2 ONLINE  +DATA/racdb/onlinelog/group_2.258.837708905 
+2          3 ONLINE  +DATA/racdb/onlinelog/group_3.265.837711217 
+2          4 ONLINE  +DATA/racdb/onlinelog/group_4.266.837711231 
+```
+<h2>3.2.增加日志组(默认为100M)</h2>
+```
+SQL> alter database add logfile thread 1 group 5; 
+
+ Database altered. 
+SQL> select thread#,v$log.group#,v$logfile.type,member 
+2  from v$log,v$logfile 
+3  where v$log.group#=v$logfile.group#; 
+
+ THREAD#     GROUP# TYPE    MEMBER 
+---------- ---------- ------- -------------------------------------------------- 
+1          1 ONLINE  +DATA/racdb/onlinelog/group_1.257.837708897 
+1          2 ONLINE  +DATA/racdb/onlinelog/group_2.258.837708905 
+2          3 ONLINE  +DATA/racdb/onlinelog/group_3.265.837711217 
+2          4 ONLINE  +DATA/racdb/onlinelog/group_4.266.837711231 
+1          5 ONLINE  +DATA/racdb/onlinelog/group_5.291.842790561 
+
+```
+备注：非OMF管理需指定文件路径 
+```
+SQL> alter database add logfile group 5 ('/oradata/linora/redo5_a.log') size 100m; 
+SQL> alter database add logfile group 5 ('/oradata/linora/redo5_a.log','/oradata/linora/redo5_b.log') size 100m; 
+```
+<h2>3.3.添加日志组成员</h2>
+```
+SQL> alter database add logfile member '+DATA/racdb/onlinelog/redo5_b.log' to group 5; 
+Database altered. 
+
+ SQL> select thread#,v$log.group#,v$logfile.type,member 
+2  from v$log,v$logfile 
+3  where v$log.group#=v$logfile.group#; 
+
+ THREAD#     GROUP# TYPE    MEMBER 
+---------- ---------- ------- -------------------------------------------------- 
+1          1 ONLINE  +DATA/racdb/onlinelog/group_1.257.837708897 
+1          2 ONLINE  +DATA/racdb/onlinelog/group_2.258.837708905 
+2          3 ONLINE  +DATA/racdb/onlinelog/group_3.265.837711217 
+2          4 ONLINE  +DATA/racdb/onlinelog/group_4.266.837711231 
+1          5 ONLINE  +DATA/racdb/onlinelog/group_5.291.842790561 
+1          5 ONLINE  +DATA/racdb/onlinelog/redo5_b.log 
+
+ 6 rows selected. 
+```
+<h2>3.4.删除成员</h2>
+```
+SQL> alter database drop logfile member '+DATA/racdb/onlinelog/redo5_b.log'; 
+
+ Database altered. 
+```
+<h2>3.5.删除组</h2>
+```
+SQL> ALTER DATABASE DROP LOGFILE GROUP 5; 
+
+ Database altered. 
+
+ SQL> select thread#,v$log.group#,v$logfile.type,member 
+2  from v$log,v$logfile 
+3  where v$log.group#=v$logfile.group#; 
+
+ THREAD#     GROUP# TYPE    MEMBER 
+---------- ---------- ------- -------------------------------------------------- 
+1          1 ONLINE  +DATA/racdb/onlinelog/group_1.257.837708897 
+1          2 ONLINE  +DATA/racdb/onlinelog/group_2.258.837708905 
+2          3 ONLINE  +DATA/racdb/onlinelog/group_3.265.837711217 
+2          4 ONLINE  +DATA/racdb/onlinelog/group_4.266.837711231 
+```
+<p>备注：删除前必须遵守如下原则，每个实例必须至少有两个日志组；当一个组处于ACTIVE或者CURRENT的状态时不可删除；只有status(v$log)为inactive并且archived 为YES时方可删除日志组。删除日志组的操作只对数据库进行更改，操作系统的文件尚未删除；当删除时适用DROP LOGFILE GROUP N语句时，此时GROUP N内的所有成员都将被删除。</p> 
+
+ <p>对于日志文件三个状态inactive，active和current在恢复中有如下原理：Oracle日志是用循环写的方式，日志的切换(log switch)到触发checkpoint动作，checkpoint会启动DBWR将内存中的脏数据写入磁盘。而DBWR写磁盘操作为分散写，这就导致DBWR可能需要较长时间才能将脏数据写完，如果日志的切换要等待DBWR写完，就形成了等待，因此8i以后，使用了Incremental Checkpoint算法。当发生checkpoint动作时，只是在控制文件中记录当时的Checkpoint SCN，DBWR同时也开始后台写进程。在这种情况下，有可能出现这种情况，三个日志组中，group1的内容已经由DBWR写完，则标记状态为inactive，group2对应的DBWR还没完成，则标记为active，group3正在使用，标记为current。对于active和current状态的日志而言，日志里面的修改都尚未写入磁盘，因此在恢复的时候，这两个日志都需要，区别在于，如果active日志丢失，由于active已经归档，可用归档日志代替，不会造成数据丢失；如果current日志丢失，则会丢失数据。</p> 
+
+ <p>增加日志文件大小需要重建日志文件。</p>
+<h1>4.Redo log恢复</h1>
+Redo log在某些情况下可能会被误删，可分几种情况分析。
+<h2>4.1.恢复非活动redo log</h2>
+如果丢失的是INACTIVE的日志组，由于已经完成checkpoint动作，数据不会丢失，此时只需要clear重建该日志即可恢复。 
+
+<pre>
+SQL> select group#,thread#,bytes,archived,status from v$log; 
+GROUP#    THREAD#      BYTES ARC STATUS 
+---------- ---------- ---------- --- ---------------- 
+1          1   52428800 YES INACTIVE 
+2          1   52428800 NO  CURRENT 
+3          1   52428800 YES INACTIVE 
+SQL>
+SQL> !mv /oradata/datafile/linora/redo03.log ~ 
+</pre>
+切换日志，查看后台日志： 
+```
+SQL> alter system archive log current; 
+alter system archive log current 
+*
+ERROR at line 1: 
+ORA-00313: open failed for members of log group 3 of thread 1 
+ORA-00312: online log 3 thread 1: '/oradata/datafile/linora/redo03.log' 
+ORA-27037: unable to obtain file status 
+Linux-x86_64 Error: 2: No such file or directory 
+Additional information: 3 
+```
+查看当前数据库状态： 
+```
+SQL> select open_mode from v$database; 
+OPEN_MODE 
+-------------------- 
+READ WRITE 
+```
+ 清理日志： 
+```
+SQL> alter database clear unarchived logfile group 3; 
+
+ Database altered. 
+SQL> alter system archive log current; 
+
+ System altered. 
+SQL> alter system archive log current; 
+
+ System altered. 
+SQL> alter system archive log current; 
+
+ System altered. 
+SQL> select group#,thread#,bytes,archived,status from v$log; 
+
+ GROUP#    THREAD#      BYTES ARC STATUS 
+---------- ---------- ---------- --- ---------------- 
+1          1   52428800 NO  CURRENT 
+2          1   52428800 YES INACTIVE 
+3          1   52428800 YES INACTIVE 
+```
+<p>如果实例关闭为shutdown immediate，按照上述步骤恢复即可，如果shutdown abort，则需要从备份或者归档恢复。</p> 
+<p>在异机恢复中，绝大多数情况都是原文件路径跟目标文件路径不一致的，在restore database完成之后，有时候忘记更改控制文件中redo log的位置，通过可以在open resetlogs前完成clear log的动作：</p> 
+<pre>
+SQL> select member from v$logfile; 
+
+ MEMBER 
+-------------------------------------------------------------------------------- 
+/oradata/linora/redo/redo03.log 
+/oradata/linora/redo/redo02.log 
+/oradata/linora/redo/redo01.log 
+
+SQL> alter database rename file '/oradata/linora/redo/redo03.log' to '/oradata_test/linora/redo/redo03.log';  
+... 
+SQL>  alter database clear unarchived logfile group 1; 
+... 
+SQL> alter database open resetlogs; 
+</pre>
+<h2>4.2.恢复当前或者活动redo log</h2>
+如果当前或者ACTIVE状态的日志组被删除，则会发生数据丢失。 
+<p>查看日志状态： </p>
+```
+SQL> select group#,thread#,bytes,archived,status from v$log; 
+
+ GROUP#    THREAD#      BYTES ARC STATUS 
+---------- ---------- ---------- --- ---------------- 
+1          1   52428800 YES INACTIVE 
+2          1   52428800 YES ACTIVE 
+3          1   52428800 NO  CURRENT 
+```
+模拟删除group 2：
+```
+SQL> !mv /oradata/datafile/linora/redo02.log ~
+```
+
+ 切换日志，后台开始报错：
+```
+SQL> alter system switch logfile; 
+System altered.
+
+
+ Errors in file /u01/app/oracle/diag/rdbms/linora/linora/trace/linora_arc2_4896.trc: 
+ORA-00313: open failed for members of log group 2 of thread 1 
+ORA-00312: online log 2 thread 1: '/oradata/datafile/linora/redo02.log' 
+ORA-27037: unable to obtain file status 
+Linux-x86_64 Error: 2: No such file or directory 
+Additional information: 3
+```
+在我的实验过程中，重启数据库会报错，需要启动到mount状态： 
+```
+SQL> shutdown immediate 
+Database closed. 
+Database dismounted. 
+ORACLE instance shut down. 
+SQL> startup 
+ORACLE instance started. 
+
+ Total System Global Area  835104768 bytes 
+Fixed Size                  2257840 bytes 
+Variable Size             536874064 bytes 
+Database Buffers          289406976 bytes 
+Redo Buffers                6565888 bytes 
+Database mounted. 
+ORA-03113: end-of-file on communication channel 
+Process ID: 5062 
+Session ID: 125 Serial number: 5 
+
+ SQL> startup mount 
+ORACLE instance started. 
+
+ Total System Global Area  835104768 bytes 
+Fixed Size                  2257840 bytes 
+Variable Size             536874064 bytes 
+Database Buffers          289406976 bytes 
+Redo Buffers                6565888 bytes 
+Database mounted. 
+```
+在mount状态进行clear log的动作： 
+```
+SQL> alter database clear unarchived logfile group 2; 
+
+ Database altered. 
+SQL> alter database clear unarchived logfile group 3; 
+
+ Database altered. 
+SQL> alter database clear unarchived logfile group 1; 
+
+ Database altered. 
+SQL> alter database open; 
+
+ Database altered. 
+SQL> select group#,thread#,bytes,archived,status from v$log; 
+
+ GROUP#    THREAD#      BYTES ARC STATUS 
+---------- ---------- ---------- --- ---------------- 
+1          1   52428800 YES UNUSED 
+2          1   52428800 NO  CURRENT 
+3          1   52428800 YES UNUSED 
+```
+上述情况是正常关闭数据库，即是是正常关闭的库，也有可能导致日志无法清理，需要作一个基于取消的不完全恢复。那如果不正常关闭，会发生什么情况呢？ 
+```
+SQL> select group#,thread#,bytes,archived,status from v$log; 
+
+ GROUP#    THREAD#      BYTES ARC STATUS 
+---------- ---------- ---------- --- ---------------- 
+1          1   52428800 YES UNUSED 
+2          1   52428800 NO  CURRENT 
+3          1   52428800 YES UNUSED 
+
+SQL> !mv /oradata/datafile/linora/redo02.log ~ 
+SQL> shutdown abort 
+ORACLE instance shut down. 
+SQL> startup mount 
+ORACLE instance started. 
+
+ Total System Global Area  835104768 bytes 
+Fixed Size                  2257840 bytes 
+Variable Size             536874064 bytes 
+Database Buffers          289406976 bytes 
+Redo Buffers                6565888 bytes 
+Database mounted. 
+SQL>
+SQL> alter database clear unarchived logfile group 1; 
+
+ Database altered. 
+SQL> alter database clear unarchived logfile group 2; 
+alter database clear unarchived logfile group 2 
+*
+ERROR at line 1: 
+ORA-01624: log 2 needed for crash recovery of instance linora (thread 1) 
+ORA-00312: online log 2 thread 1: '/oradata/datafile/linora/redo02.log' 
+SQL> alter database clear unarchived logfile group 3; 
+Database altered. 
+```
+显然，在被删除的日志文件上，无法清除。这个时候需要通过RMAN作不完全恢复， 
+```
+SQL> recover database until cancel; 
+ORA-00279: change 1084383 generated at 03/21/2014 15:50:43 needed for thread 1 
+ORA-00289: suggestion : /oradata/arch/1_21_842800816.arc 
+ORA-00280: change 1084383 for thread 1 is in sequence #21 
+Specify log: {&lt;RET>=suggested | filename | AUTO | CANCEL} 
+cancel 
+ORA-01547: warning: RECOVER succeeded but OPEN RESETLOGS would get error below 
+ORA-01194: file 1 needs more recovery to be consistent 
+ORA-01110: data file 1: '/oradata/datafile/linora/system01.dbf' 
+```
+基于取消的不完全恢复也不行！！！只能从备份恢复：
+```
+[oracle@linora:/home/oracle]$ ls -lt /oradata/arch/ 
+total 199680 
+-rw-r----- 1 oracle oinstall     1536 Mar 21 15:43 1_17_842800816.arc 
+RMAN> run{ 
+2> set until sequence 17; 
+3> restore database; 
+4> recover database; 
+5> alter database open resetlogs; 
+6> }
+
+RMAN> alter database open resetlogs; 
+database opened
+```
+如果连备份都没有，那就只能通过_allow_resetlogs_corruption隐藏参数强制跳过一致性检查去开启数据库，然后导出数据，再重新导入数据。 

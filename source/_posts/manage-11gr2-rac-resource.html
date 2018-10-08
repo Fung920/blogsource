@@ -1,0 +1,220 @@
+---
+layout: post
+title: 11gr2 RAC Resource管理
+categories:
+- oracle
+tags:
+- rac
+published: true
+comments: false
+date: 2013-09-04
+---
+<h1>1.RAC中有哪些资源</h1>
+RAC中定义了若干种资源，这些资源的定义被存放在OCR中，当GI启动后，产生了VIP，SCAN，ASM进程，磁盘组等资源。
+<!--more-->
+此外，数据库被创建后，还有数据库，实例，监听等资源，对于这些各种各样的资源，可以通过SQLPLUS，EM，srvctl及crsctl等工具进行管理。
+<h1>2.svrctl</h1>
+<h2>I．数据库管理</h2>
+```
+[oracle@ora11g:/home/oracle]$ srvctl status database -d fung 
+Instance fung1 is running on node ora11g 
+[oracle@ora11g:/home/oracle]$ srvctl status instance -d fung -i fung1 
+Instance fung1 is running on node ora11g 
+[oracle@ora11g:/home/oracle]$ srvctl stop database -h 
+Stops the database. 
+Usage: srvctl stop database -d <db_unique_name> [-o <stop_options>] [-f] 
+-d <db_unique_name>      Unique name for the database 
+-o <stop_options>        Options to shutdown command (e.g. NORMAL, TRANSACTIONAL, IMMEDIATE, or ABORT) 
+-f                       Force stop, will stop database and any associated services and any dependent resources 
+-h                       Print usage  
+```
+```
+[oracle@ora11g:/home/oracle]$ srvctl stop database -d fung -o immediate 
+[oracle@ora11g:/home/oracle]$ srvctl status database -d fung 
+Instance fung1 is not running on node ora11g 
+[oracle@ora11g:/home/oracle]$ srvctl start database -h 
+Starts the database. 
+Usage: srvctl start database -d <db_unique_name> [-o <start_options>] [-n <node>] 
+-d <db_unique_name>      Unique name for the database 
+-o <start_options>       Options to startup command (e.g. OPEN, MOUNT, or 'READ ONLY') 
+-n <node>                Node on which to start the database (only for RAC One Node databases) 
+-h                       Print usage
+[oracle@ora11g:/home/oracle]$ srvctl start database -d fung 
+[oracle@ora11g:/home/oracle]$ srvctl status database -d fung 
+Instance fung1 is running on node ora11g
+```
+<h2>II．监听管理</h2>
+```
+[oracle@ora11g:/home/oracle]$ srvctl status listener 
+Listener LISTENER is enabled 
+Listener LISTENER is running on node(s): ora11g
+
+[oracle@ora11g:/home/oracle]$ srvctl start listener -h 
+Starts the listener. 
+Usage: srvctl start listener [-l <lsnr_name>] [-n <node_name>] 
+-l <lsnr_name>           Listener name 
+-n <node_name>           Node name 
+-h                       Print usage
+
+[oracle@ora11g:/home/oracle]$ srvctl stop listener -h 
+Stops the listener. 
+Usage: srvctl stop listener [-l <lsnr_name>] [-n <node_name>] [-f] 
+-l <lsnr_name>           Listener name 
+-n <node_name>           Node name 
+-f                       Force stop 
+-h                       Print usage
+```
+<h2>III．ASM管理</h2>
+```
+[oracle@ora11g:/home/oracle]$ srvctl status asm 
+ASM is running on ora11g
+[oracle@ora11g:/home/oracle]$ srvctl start asm -h 
+Starts ASM instance. 
+Usage: srvctl start asm [-n <node_name>] [-o <start_options>] 
+-n <node_name>           Node name 
+-o <start_options>       Options to startup command (e.g. OPEN, MOUNT, or NOMOUNT) 
+-h                       Print usage 
+
+[oracle@ora11g:/home/oracle]$ srvctl stop asm -h 
+Stops ASM instance. 
+Usage: srvctl stop asm [-n <node_name>] [-o <stop_options>] [-f] 
+-n <node_name>           Node name 
+-o <stop_options>        Options to shutdown command (e.g. NORMAL, TRANSACTIONAL, IMMEDIATE, or ABORT) 
+-f                       Force stop 
+-h                       Print usage
+```
+<h2>IV．ASM磁盘组管理</h2>
+```
+[oracle@ora11g:/home/oracle]$ srvctl status diskgroup -h 
+Displays the current state of the diskgroup. 
+Usage: srvctl status diskgroup -g <dg_name> [-n "<node_list>"] [-a] [-v] 
+-g <dg_name>             Disk Group name 
+-n "<node_list>"         Comma separated node names 
+-a                       Print detailed status information 
+-v                       Verbose output 
+-h                       Print usage
+
+[oracle@ora11g:/home/oracle]$ srvctl status diskgroup -g OCR 
+Disk Group OCR is running on ora11g 
+
+[oracle@ora11g:/home/oracle]$ srvctl stop diskgroup -h 
+Stops the diskgroup. 
+Usage: srvctl stop diskgroup -g <dg_name> [-n "<node_list>"] [-f] 
+-g <dg_name>             Disk Group name 
+-n "<node_list>"         Comma separated node names 
+-f                       Force stop 
+-h                       Print usage
+
+[oracle@ora11g:/home/oracle]$ srvctl start diskgroup -h 
+Starts the diskgroup, causing ASM to mount it. 
+Usage: srvctl start diskgroup -g <dg_name> [-n "<node_list>"] 
+-g <dg_name>             Disk Group name 
+-n "<node_list>"         Comma separated node names 
+-h                       Print usage
+```
+<h2>V．其他命令</h2>
+通过srvctl的enable、disable、remove、add等子命令，对各种资源进行激活、禁止、删除和添加，以监听管理为例：
+```
+$srvctl enable/disable listener -l LISTENER -n node1 
+$srvctl remove listener -l LISTENER 
+$srvctl add listener -l LISTENER -p 1521 -o $ORACLE_HOME
+```
+<h2>VI.修改VIP</h2>
+查看VIP配置情况：
+```
+[grid@ora11g:/home/grid]$ srvctl config vip -n ora11g 
+VIP exists: /fung-vip/192.168.137.111/192.168.137.0/255.255.255.0/eth0, hosting node ora11g
+```
+
+修改VIP，必须先停止数据库Service服务，如：
+```
+[grid@ora11g:/home/grid]$ srvctl stop listener -n ora11g
+```
+
+ 接着，关闭这个节点的VIP资源
+```
+$srvctl stop vip -n node1
+```
+以root用户修改VIP：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl modify nodeapps -n ora11g -A 192.168.137.110/255.255.255.0/eth0
+```
+确认修改情况
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl config vip -n ora11g 
+VIP exists: /192.168.137.110/192.168.137.110/192.168.137.0/255.255.255.0/eth0, hosting node ora11g
+```
+
+再次启动VIP服务：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl start vip -n ora11g 
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl start listener -n ora11g
+```
+<h2>VII．修改SCAN</h2>
+先查询当前SCAN配置：
+```
+[grid@ora11g:/home/grid]$ srvctl config scan 
+SCAN name: scan-ip, Network: 1/192.168.137.0/255.255.255.0/eth0 
+SCAN VIP name: scan1, IP: /scan-ip/192.168.137.112
+```
+
+ 关闭当前SCAN资源：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl stop scan_listener 
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl stop scan 
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl status scan 
+SCAN VIP scan1 is enabled 
+SCAN VIP scan1 is not running
+```
+
+ 修改SCAN：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl modify scan -n fung-scan 
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl start scan 
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl start scan_listener 
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./srvctl config scan 
+SCAN name: fung-scan, Network: 1/192.168.137.0/255.255.255.0/eth0 
+SCAN VIP name: scan1, IP: /fung-scan/192.168.137.111
+```
+<h2>VIII．修改Public IP</h2>
+显示当前网卡配置：
+```
+[grid@ora11g:/home/grid]$ oifcfg getif 
+eth0  192.168.137.0  global  public 
+eth1  10.0.0.0  global  cluster_interconnect
+```
+
+ 停止数据库及监听：
+```
+[grid@ora11g:/home/grid]$ srvctl stop database -d fung -o immediate 
+[grid@ora11g:/home/grid]$ srvctl stop listener -n ora11g
+```
+
+ 以root用户停止CRS：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./crsctl stop crs
+```
+
+ 通过OS命令修改此节点Public IP。 
+启动CRS服务，并且用以下命令修改Public IP：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./oifcfg setif -global eth0/192.168.137.13:public
+```
+<h2>IX．修改private IP</h2>
+保证CRS服务在线，使用以下命令修改：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]# ./oifcfg setif -global eth1/192.76.31.0:cluster_interconnect
+```
+
+ 两边节点停止数据库及CRS：
+```
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]#./srvctl stop database -d gdcdc -o immedate 
+[root@ora11g:/u01/app/grid/product/11.2.0.4/bin]#./crsctl stop crs
+```
+
+修改/etc/hosts，接着使用OS工具修改eth1网卡IP地址。启动crs并且检验修改结果。<br /> 
+
+ <b>RAC IP</b><b>地址修改有风险，需谨慎！</b> <br />
+
+ <strong>EOF</strong>
+ 

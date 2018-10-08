@@ -1,0 +1,428 @@
+---
+layout: post
+title: "Duplicate Database With RMAN"
+date: 2014-05-23 10:02:38
+comments: false
+categories: oracle
+tags: rman
+keywords: duplicate, rman
+description: duplicate database onto different machine by using rman,RMAN复制数据库
+---
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" /> 
+在DBA日常维护中，有时会接到开发人员要求部署一个跟生产环境相同的数据库，这个时候可以用到rman的Duplicate功能直接将目标数据库复制过来。本文以异机复制为例，简单阐述Duplicate的用法。
+<!--more-->
+<h3>1.首先在duplicate端创建密码文件</h3>
+跟异机恢复一样，在duplicate节点只需要安装相同版本的数据库软件，而不需要单独建库。
+```
+[ora11g@:/home/oracle]$ export ORACLE_SID=dup
+[ora11g@:/home/oracle]$ orapwd file=$ORACLE_HOME/dbs/orapw$ORACLE_SID password=oracle entries=5 force=y
+```
+<h3>2.duplicate端静态注册监听</h3>
+duplicate端因为没有实例，需要静态注册监听。同时在tnsnames.ora中添加两个库的tns。
+```
+SID_LIST_LISTENER =  
+  (SID_LIST =  
+    (SID_DESC =  
+      (SID_NAME = PLSExtProc)  
+      (ORACLE_HOME = /oracle/app/oracle/product/11.2.0/db_1)  
+      (PROGRAM = extproc)  
+    )  
+    (SID_DESC =  
+      (SID_NAME = dup)  
+      (ORACLE_HOME = /oracle/app/oracle/product/11.2.0/db_1)  
+      (GLOBAL_DBNAME=dup)  
+    )  
+  )
+[ora11g@:/oracle]$ lsnrctl start
+[ora11g@:/home/ora11g]$ lsnrctl service
+
+LSNRCTL for IBM/AIX RISC System/6000: Version 11.2.0.3.0 - Production on 23-MAY-2014 17:33:57
+
+Copyright (c) 1991, 2011, Oracle.  All rights reserved.
+
+Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=oratest)(PORT=1521)))
+Services Summary...
+Service "PLSExtProc" has 1 instance(s).
+  Instance "PLSExtProc", status UNKNOWN, has 1 handler(s) for this service...
+    Handler(s):
+      "DEDICATED" established:0 refused:0
+         LOCAL SERVER
+Service "dup" has 1 instance(s).
+  Instance "dup", status UNKNOWN, has 1 handler(s) for this service...
+    Handler(s):
+      "DEDICATED" established:0 refused:0
+         LOCAL SERVER
+The command completed successfully
+```
+<h3>3.创建初始化文件</h3>
+如果是duplicate到本地的，需要在init文件上添加如下参数，以免数据文件路径冲突。注意其他文件的路径要先创建好。
+```
+DB_FILE_NAME_CONVERT=(/original/path,/duplicate/path)
+LOG_FILE_NAME_CONVERT=(/original/path,/duplicate/path)
+```
+将dup数据库以创建的pfile启动至nomount状态。这个dup数据库将会是此次duplicate中rman的<code>auxiliary instance</code>。
+```
+SQL> startup nomount
+ORACLE instance started.
+
+Total System Global Area 1570009088 bytes
+Fixed Size                  2221840 bytes
+Variable Size             973080816 bytes
+Database Buffers          587202560 bytes
+Redo Buffers                7503872 bytes
+```
+<h3>4.利用rman进行Active duplicate</h3>
+使用rman工具，以dup实例作为辅助实例连接至目标数据库。duplicate的主要工作是在辅助实例完成，如restore database，recover database等。
+```
+[ora11g@:/home/ora11g]$ rman target sys/oracle@orcl auxiliary sys/oracle@dup
+Recovery Manager: Release 11.2.0.3.0 - Production on Fri May 23 18:09:04 2014
+
+Copyright (c) 1982, 2011, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: ORCL (DBID=1375890310)
+connected to auxiliary database: DUP (not mounted)
+
+```
+此时可用以下命令进行复制：
+```
+DUPLICATE TARGET DATABASE TO DUP;
+DUPLICATE TARGET DATABASE TO DUP UNTIL TIME ‘SYSDATA-4’; 
+--Duplicate database to target’s state 4 days ago.
+```
+上述指令是要通过备份去复制，下面这个指令是直接复制Active Database。这个功能是11g以后新增加的，可以利用这个功能创建DataGuard。两者的区别在于，rman备份产生的数据量要小，因为rman只备份含有数据的block，而Active模式则是整个数据文件copy过来，因此，使用Active模式复制，速度要慢很多。
+```
+[ora11g@:/home/oracle]$ rman target sys/oracle@orcl \
+auxiliary sys/oracle@dup msglog=/oracle/dup_`date '+%Y%m%d%H%M'`.log<<EOF
+run{
+allocate channel c1 type disk;
+allocate auxiliary channel ch1 TYPE disk;
+#set until time "to_date('2014/05/23 12:00:00','YYYY/MM/DD HH24:MI:SS')";
+set newname for datafile 1  to '/oracle/oradata/dup/system01.dbf';
+#or CONFIGURE AUXNAME FOR DATAFILE 1 to '/oracle/oradata/dup/system01.dbf';
+set newname for datafile 2  to '/oracle/oradata/dup/undotbs01.dbf';
+set newname for datafile 3  to '/oracle/oradata/dup/sysaux01.dbf';
+set newname for datafile 4  to '/oracle/oradata/dup/users01.dbf';
+set newname for datafile 5  to '/oracle/oradata/dup/fung01.dbf';
+set newname for tempfile 1  to '/oracle/oradata/dup/temp01.dbf';
+#/*SKIP TABLESPACE tools*/ skip read only tablespace
+DUPLICATE TARGET DATABASE TO DUP FROM ACTIVE DATABASE
+LOGFILE
+GROUP 1 ('/oracle/oradata/dup/redo01a.log',
+        '/oracle/oradata/dup/redo01b.log') size 10240k reuse,
+GROUP 2 ('/oracle/oradata/dup/redo02a.log',
+         '/oracle/oradata/dup/redo02b.log') size 10240k reuse,
+GROUP 3 ('/oracle/oradata/dup/redo03a.log',
+         '/oracle/oradata/dup/redo03b.log') size 10240k reuse;
+switch datafile all;
+switch tempfile all;
+}
+exit;
+EOF
+```
+如果dup存储目录跟目标数据库一致，则使用nofilenamecheck即可，当然，这只能在不同的机器上实现。
+```
+run{
+allocate auxiliary channel ch1 DEVICE TYPE disk;
+DUPLICATE TARGET DATABASE TO dupdb
+ 	 # specify client-side parameter file (on same host as RMAN executable) for
+ 	 # auxiliary instance if necessary
+ 	PFILE = /dup/oracle/dbs/initDUPDB.ora
+  	NOFILENAMECHECK;
+  	}
+```
+在我的环境中，遇到了一个bug <a href="https://support.oracle.com/epmos/faces/DocumentDisplay?id=1552916.1">[ID 1552916.1]</a>，添加debug参数可解决，这个bug也只是在Active duplicate的时候触发的。
+```
+[ora11g@:/home/oracle]$ rman target sys/oracle@orcl debug trace=rman.trc \
+auxiliary sys/oracle@dup msglog=/oracle/dup_`date '+%Y%m%d%H%M'`.log<<EOF
+run{
+allocate channel c1 type disk;
+allocate auxiliary channel ch1 TYPE disk;
+#set until time "to_date('2014/05/23 12:00:00','YYYY/MM/DD HH24:MI:SS')";
+set newname for datafile 1  to '/oracle/oradata/dup/system01.dbf';
+#or CONFIGURE AUXNAME FOR DATAFILE 1 to '/oracle/oradata/dup/system01.dbf';
+set newname for datafile 2  to '/oracle/oradata/dup/undotbs01.dbf';
+set newname for datafile 3  to '/oracle/oradata/dup/sysaux01.dbf';
+set newname for datafile 4  to '/oracle/oradata/dup/users01.dbf';
+set newname for datafile 5  to '/oracle/oradata/dup/fung01.dbf';
+set newname for tempfile 1  to '/oracle/oradata/dup/temp01.dbf';
+#/*SKIP TABLESPACE tools*/ skip read only tablespace
+DUPLICATE TARGET DATABASE TO DUP FROM ACTIVE DATABASE
+LOGFILE
+GROUP 1 ('/oracle/oradata/dup/redo01a.log',
+        '/oracle/oradata/dup/redo01b.log') size 10240k reuse,
+GROUP 2 ('/oracle/oradata/dup/redo02a.log',
+         '/oracle/oradata/dup/redo02b.log') size 10240k reuse,
+GROUP 3 ('/oracle/oradata/dup/redo03a.log',
+         '/oracle/oradata/dup/redo03b.log') size 10240k reuse;
+switch datafile all;
+switch tempfile all;
+}
+exit;
+EOF
+```
+有关时间的输出：
+```
+Recovery Manager: Release 11.2.0.3.0 - Production on Fri May 23 19:30:52 2014
+
+Copyright (c) 1982, 2011, Oracle and/or its affiliates.  All rights reserved.
+
+RMAN-06005: connected to target database: ORCL (DBID=1375890310)
+RMAN-06549: connected to auxiliary database: DUP (not mounted)
+
+RMAN> 2> 3> 4> 5> 6> 7> 8> 9> 10> 11> 12> 13> 14> 15> 16> 17> 18> 19> 20> 21> 22> 23> 
+RMAN-06009: using target database control file instead of recovery catalog
+...
+RMAN-06400: database opened
+RMAN-03091: Finished Duplicate Db at 2014-05-23 19:58:04
+
+
+RMAN-08031: released channel: c1
+RMAN-08031: released channel: ch1
+```
+经历了近30分钟。
+<h3>5. 使用备份进行duplicate</h3>
+在目标数据库进行rman备份，并且将备份集传输到dup目录。由于没有控制文件，因此，备份集存放路径要跟原来的一样。<br />
+源库查询scn：
+```
+RMAN> list backup of archivelog all;
+
+
+List of Backup Sets
+===================
+BS Key  Size       Device Type Elapsed Time Completion Time    
+------- ---------- ----------- ------------ -------------------
+19      490.00K    DISK        00:00:00     2014-06-29 09:52:03
+        BP Key: 19   Status: AVAILABLE  Compressed: NO  Tag: TAG20140629T095201
+        Piece Name: /oracle/backup/arch_16pc1ua3_1_1_20140629_ORCL
+
+  List of Archived Logs in backup set 19
+  Thrd Seq     Low SCN    Low Time            Next SCN   Next Time
+  ---- ------- ---------- ------------------- ---------- ---------
+  1    37      376337     2014-06-29 09:00:56 376374     2014-06-29 09:01:38
+  1    38      376374     2014-06-29 09:01:38 377772     2014-06-29 09:35:42
+  1    39      377772     2014-06-29 09:35:42 378694     2014-06-29 09:51:46
+  1    40      378694     2014-06-29 09:51:46 378719     2014-06-29 09:51:59
+  1    41      378719     2014-06-29 09:51:59 378728     2014-06-29 09:51:59
+  1    42      378728     2014-06-29 09:51:59 378737     2014-06-29 09:52:01
+  1    43      378737     2014-06-29 09:52:01 378745     2014-06-29 09:52:01
+```
+恢复的时候选取378745这个scn。
+```
+[ora11g@:/home/oracle]$ rman target sys/oracle@orcl \
+auxiliary sys/oracle@dup msglog=/oracle/dup_`date '+%Y%m%d%H%M'`.log<<EOF
+run{
+allocate channel c1 type disk;
+allocate auxiliary channel ch1 TYPE disk;
+set until scn 378745;
+set newname for datafile 1  to '/oracle/oradata/dup/system01.dbf';
+#or CONFIGURE AUXNAME FOR DATAFILE 1 to '/oracle/oradata/dup/system01.dbf';
+set newname for datafile 2  to '/oracle/oradata/dup/undotbs01.dbf';
+set newname for datafile 3  to '/oracle/oradata/dup/sysaux01.dbf';
+set newname for datafile 4  to '/oracle/oradata/dup/users01.dbf';
+set newname for datafile 5  to '/oracle/oradata/dup/fung01.dbf';
+set newname for tempfile 1  to '/oracle/oradata/dup/temp01.dbf';
+#/*SKIP TABLESPACE tools*/ skip read only tablespace
+DUPLICATE TARGET DATABASE TO DUP
+LOGFILE
+GROUP 1 ('/oracle/oradata/dup/redo01a.log',
+        '/oracle/oradata/dup/redo01b.log') size 10240k reuse,
+GROUP 2 ('/oracle/oradata/dup/redo02a.log',
+         '/oracle/oradata/dup/redo02b.log') size 10240k reuse,
+GROUP 3 ('/oracle/oradata/dup/redo03a.log',
+         '/oracle/oradata/dup/redo03b.log') size 10240k reuse;
+switch datafile all;
+switch tempfile all;
+}
+exit;
+EOF
+```
+恢复时间：
+```
+Recovery Manager: Release 11.2.0.3.0 - Production on Fri May 23 20:23:42 2014
+
+Copyright (c) 1982, 2011, Oracle and/or its affiliates.  All rights reserved.
+
+connected to target database: ORCL (DBID=1375890310)
+connected to auxiliary database: DUP (not mounted)
+
+RMAN> 2> 3> 4> 5> 6> 7> 8> 9> 10> 11> 12> 13> 14> 15> 16> 17> 18> 19> 20> 21> 22> 23> 
+using target database control file instead of recovery catalog
+...
+Starting restore at 2014-05-23 20:24:01
+
+channel ch1: starting datafile backup set restore
+channel ch1: restoring control file
+channel ch1: reading from backup piece /oracle/backup/bk_34_1_12pc1u9q_1_1_20140629_ORCL
+channel ch1: piece handle=/oracle/backup/bk_34_1_12pc1u9q_1_1_20140629_ORCL tag=HOT_DB_BK_LEVEL0
+channel ch1: restored backup piece 1
+channel ch1: restore complete, elapsed time: 00:00:01
+output file name=/oracle/oradata/dup/control01.ctl
+output file name=/oracle/oradata/dup/control02.ctl
+Finished restore at 2014-05-23 20:24:02
+...
+Starting restore at 2014-05-23 20:24:07
+
+channel ch1: starting datafile backup set restore
+channel ch1: specifying datafile(s) to restore from backup set
+channel ch1: restoring datafile 00002 to /oracle/oradata/dup/undotbs01.dbf
+channel ch1: restoring datafile 00003 to /oracle/oradata/dup/sysaux01.dbf
+channel ch1: reading from backup piece /oracle/backup/bk_33_1_11pc1u9j_1_1_20140629_ORCL
+channel ch1: piece handle=/oracle/backup/bk_33_1_11pc1u9j_1_1_20140629_ORCL tag=HOT_DB_BK_LEVEL0
+channel ch1: restored backup piece 1
+channel ch1: restore complete, elapsed time: 00:00:15
+channel ch1: starting datafile backup set restore
+channel ch1: specifying datafile(s) to restore from backup set
+channel ch1: restoring datafile 00001 to /oracle/oradata/dup/system01.dbf
+channel ch1: restoring datafile 00004 to /oracle/oradata/dup/users01.dbf
+channel ch1: restoring datafile 00005 to /oracle/oradata/dup/fung01.dbf
+channel ch1: reading from backup piece /oracle/backup/bk_32_1_10pc1u9j_1_1_20140629_ORCL
+channel ch1: piece handle=/oracle/backup/bk_32_1_10pc1u9j_1_1_20140629_ORCL tag=HOT_DB_BK_LEVEL0
+channel ch1: restored backup piece 1
+channel ch1: restore complete, elapsed time: 00:00:25
+Finished restore at 2014-05-23 20:24:48
+...
+database opened
+Finished Duplicate Db at 2014-05-23 20:25:20
+SQL> select dbid,name,open_mode,activation#,created from v$database;
+
+      DBID NAME      OPEN_MODE            ACTIVATION# CREATED
+---------- --------- -------------------- ----------- -------------------
+ 219153832 DUP       READ WRITE             219158696 2014-05-23 20:25:12
+```
+在同等条件下，基于备份的duplicate只需要3分钟左右，而Active的duplicate则需要30分钟。
+<h3>6. 总结</h3>
+对于日志文件及数据文件的重命名方式，如果在spfile中同时指定<code>LOGFILE</code>和<code>LOG_FILE_NAME_CONVERT</code>，rman会使用<code>LOGFILE</code>。如果两者都不指定，那么，rman使用源数据库相同的路径。  
+<center>Table 1-1 Order of Precedence for Redo Log Filename Creation</center>
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;border-color:#999;}
+.tg td{font-family:Arial, sans-serif;font-size:14px;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:#999;color:#444;background-color:#F7FDFA;}
+.tg th{font-family:Arial, sans-serif;font-size:14px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:#999;color:#fff;background-color:#26ADE4;}
+</style>
+<table class="tg">
+  <tr>
+    <th class="tg-031e">Order</th>
+    <th class="tg-031e">Method</th>
+    <th class="tg-031e">Result</th>
+  </tr>
+  <tr>
+    <td class="tg-031e">1</td>
+    <td class="tg-031e">Specify the <code>LOGFILE</code> clause of DUPLICATE command.</td>
+    <td class="tg-031e">Creates redo logs as specified.</td>
+  </tr>
+  <tr>
+    <td class="tg-031e">2</td>
+    <td class="tg-031e">Set <code>LOG_FILE_NAME_CONVERT</code> initialization parameter.</td>
+    <td class="tg-031e">Transforms target filenames, for example, from log_* to duplog_*. Note that you can specify multiple conversion pairs. This parameter allows the redo log to exist as long as the size matches, because it uses the REUSE parameter when creating the logs.</td>
+  </tr>
+  <tr>
+    <td class="tg-031e">3</td>
+    <td class="tg-031e">Do none of the preceding steps.</td>
+    <td class="tg-031e">Makes the duplicate filenames the same as the target filenames. You must specify the NOFILENAMECHECK option when using this method and the duplicate database should be in a different host.</td>
+  </tr>
+</table>
+<center>Table 1-2 Order of Precedence for Datafile Filename Creation</center>
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;border-color:#999;}
+.tg td{font-family:Arial, sans-serif;font-size:14px;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:#999;color:#444;background-color:#F7FDFA;}
+.tg th{font-family:Arial, sans-serif;font-size:14px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:#999;color:#fff;background-color:#26ADE4;}
+</style>
+<table class="tg">
+  <tr>
+    <th class="tg-031e">Order</th>
+    <th class="tg-031e">Method</th>
+    <th class="tg-031e">Result</th>
+  </tr>
+  <tr>
+    <td class="tg-031e">1</td>
+    <td class="tg-031e">Issue <code>SET NEWNAME</code> command.</td>
+    <td class="tg-031e">Creates new datafile filenames. You must reissue this command each time you rename files.</td>
+  </tr>
+  <tr>
+    <td class="tg-031e">2</td>
+    <td class="tg-031e">Issue <code>CONFIGURE AUXNAME</code> command.</td>
+    <td class="tg-031e">Creates new datafile filenames. This setting stays in effect until disabled with a <code>CONFIGURE AUXNAME ... CLEAR</code> command.</td>
+  </tr>
+  <tr>
+    <td class="tg-031e">3</td>
+    <td class="tg-031e">Set <code>DB_FILE_NAME_CONVERT</code> initialization parameter.</td>
+    <td class="tg-031e">Transforms target filenames, for example, from /oracle/ to /dup/oracle/. Note that you can specify multiple conversion pairs. You can use this parameter for those files not renamed with either <code>SET NEWNAME</code> and <code>CONFIGURE AUXNAME</code>.</td>
+  </tr>
+  <tr>
+    <td class="tg-031e">4</td>
+    <td class="tg-031e">Do none of the preceding steps.,Reuses the target filenames.</td>
+    <td class="tg-031e">You must specify the <code>NOFILENAMECHECK</code> option when using this method and the duplicate database should be in a different host.</td>
+  </tr>
+</table>
+以上优先顺序决定了rman命名日志文件及数据文件的方法。如果你使用了以上所有的方法，那么rman只会使用到<code>SET NEWNAME</code>，如果同时使用<code>CONFIGURE AUXNAME</code>和<code>DB_FILE_NAME_CONVERT</code>，rman会以<code>CONFIGURE AUXNAME</code>优先。如果不使用以上所有的方法，rman将会使用跟源数据库一致的命名。
+<h3>7. 其他</h3>
+对于set newname可用如下语句进行转换，之后再用vi或者其他工具进行路径的替换。
+```
+select 'set newname for tempfile  '||file_id||' to '''||'+DATA'||''';' from dba_temp_files;
+select 'set newname for datafile '||file# || ' to ' ||''''|| name ||''';' from v$datafile
+```
+<h3>8. 补充</h3>
+active database duplication是11g新特性，在之前的版本中，对于duplicate动作都是要基于RMAN备份，而11g以后的版本提供了active database duplication，即不用源数据库的备份可以直接在线duplicate，包括DataGuard的创建。duplicate的数据库具有不同的DBID，如果使用catalog database，那么dup库和源库是可以在同一个catalog DB注册的。在duplicate过程中，可以去除一些表空间，如只读表空间。
+<h4>8.1 Renaming Files in a Duplicate Database</h4>
+11g还提供了<code>parameter_value_convert</code>参数，这个参数可以让DBA跳过手动创建密码文件和SPFILE的过程，通过指定SPFILE和set命令及parameter_value_convert参数结合，自动完成spfile的创建。在这之前，auxiliary instance只需要从pfile启动，且pfile内容仅仅包含DB_NAME即可。如：
+```
+DUPLICATE target DATABASE TO DUP FROM ACTIVE DATABASE
+DB_FILE_NAME_CONVERT '/oracle/oradata/orcl/','/dup/'
+SPFILE 
+PARAMETER_VALUE_CONVERT '/oracle/oradata/orcl/','/dup/'
+SET LOG_FILE_NAME_CONVERT '/oracle/oradata/orcl/','/dup/';
+```
+这些命令很方便就能帮你设置好spfile，同时，在正常的alter system set...scope=spfile中，你能都将相关的参数添加到duplicate里面去。对于ADR目录，PARAMETER_VALUE_CONVERT会当相应的ADR目录创建需要转换的目录，但对于数据文件和日志文件不能使用PARAMETER_VALUE_CONVERT参数进行转换。
+```
+[oracle@linora:/home/oracle]$ rman target sys/oracle@linora \
+> auxiliary sys/oracle@dup
+RMAN> DUPLICATE target DATABASE TO dup FROM ACTIVE DATABASE
+2> SPFILE
+3> PARAMETER_VALUE_CONVERT '/oradata/datafile/linora/','/dup/'
+4> SET SGA_MAX_SIZE = '500M'
+5> SET SGA_TARGET = '500M'
+6> SET LOG_FILE_NAME_CONVERT='/oradata/datafile/linora/','/dup/'
+7> DB_FILE_NAME_CONVERT='/oradata/datafile/linora/','/dup/';
+```
+在输出脚本中，可以看到duplicate一开始会先执行clone spfile的动作，后续的set命令是通过alter system set...scope=spfile去执行的。SPFILE子句表示在打开数据库之前还原和修改SPFILE。
+```
+contents of Memory Script:
+{
+   backup as copy reuse
+   targetfile  '/u01/app/oracle/product/11gr2/dbs/spfilelinora.ora' auxiliary format 
+ '/u01/app/oracle/product/11gr2/dbs/spfiledup.ora'   ;
+   sql clone "alter system set spfile= ''/u01/app/oracle/product/11gr2/dbs/spfiledup.ora''";
+}
+...
+sql statement: alter system set  db_name =  ''DUP'' comment= ''duplicate'' scope=spfile
+sql statement: alter system set  control_files =  ''/dup/control01.ctl'', ''/dup/control02.ctl'' comment= '''' scope=spfile
+sql statement: alter system set  SGA_MAX_SIZE =  250M comment= '''' scope=spfile
+sql statement: alter system set  SGA_TARGET =  250M comment= '''' scope=spfile
+sql statement: alter system set  log_archive_dest_1 =  ''LOCATION=/dup/arch/'' comment= '''' scope=spfile
+sql statement: alter system set  LOG_FILE_NAME_CONVERT =  ''/oradata/datafile/linora/'', ''/dup/'' comment= '''' scope=spfile
+```
+使用SPFILE创建Active Standby，多加一个db_unique_name参数即可。
+```
+DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE
+SPFILE
+PARAMETER_VALUE_CONVERT '/oradata/datafile/linora/','/dup/'
+SET "DB_UNIQUE_NAME"="stdby"
+SET SGA_MAX_SIZE = '250M'
+SET SGA_TARGET = '250M'
+SET log_archive_dest_1 = 'LOCATION=/dup/arch/'
+SET LOG_FILE_NAME_CONVERT='/oradata/datafile/linora/','/dup/'
+DB_FILE_NAME_CONVERT='/oradata/datafile/linora/','/dup/';
+```
+<h4>8.2 Backup-base and active database duplication</h4>
+<h5>backup-base</h5>
+<li>如果不是使用远程Client操作auxiliary instance，或者不是使用active duplication，则auxiliary instance可以不需要密码文件</li>
+<li>源数据库可以是CLOSED或者OPEN状态</li>
+<li>源端和dup端操作系统版本需一致，但32bit和64bit认为是一致，只是从32bit到64bit duplicate完成后需要执行@?/rdbms/admin/utlrp.sql脚本</li>
+<li>如果在duplicate database中指定password file子句，会将源端密码文件copy至dup端，且会强行覆盖dup原有密码文件</li>
+<h5>active database duplication</h5>
+<li>源端和dup端都需要在Oracle NET中注册，意味着rman连接auxiliary instance必须使用net service name </li>
+<li>源端数据库必须为open或者mounted状态</li>
+<li>如果源端为mounted状态，那么在关闭前一定是干净的关闭</li>
+<li>源端如果为open状态，那么，一定要运行在archivelog模式下</li>
+
+More details in:  
+<a href="http://docs.oracle.com/cd/E11882_01/backup.112/e10642/toc.htm">Oracle® Database Backup and Recovery User's Guide 11g Release 2 (11.2)</a>

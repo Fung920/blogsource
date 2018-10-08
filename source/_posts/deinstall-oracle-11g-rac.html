@@ -1,0 +1,609 @@
+---
+layout: post
+title: Deinstall Oracle 11g RAC
+categories:
+- oracle
+tags:
+- rac
+published: true
+comments: false
+date: 2014-03-30
+---
+ 11g提供了deinstall工具对11g数据库进行删除，以RAC为例，删除步骤为：先删除database，再删除database软件，最后以gi用户删除Grid Infrastructure软件。<br />
+<!--more-->
+ 1.以oracle用户登录，调用dbca删除database<br />
+
+ 2.以oracle用户登录，进入$ORACLE_HOME/deintall/，执行deinstall脚本
+```
+[oracle@oel1:/home/oracle]$ /u01/app/oracle/product/11.2.0/db_1/deinstall/deinstall
+Checking for required files and bootstrapping ...
+Please wait ...
+Location of logs /u01/app/oracle/oraInventory/logs/
+
+ ############ ORACLE DEINSTALL & DECONFIG TOOL START ############
+
+ ######################### CHECK OPERATION START #########################
+## [START] Install check configuration ##
+
+Checking for existence of the Oracle home location /u01/app/oracle/product/11.2.0/db_1
+Oracle Home type selected for deinstall is: Oracle Real Application Cluster Database
+Oracle Base selected for deinstall is: /u01/app/oracle
+Checking for existence of central inventory location /u01/app/oracle/oraInventory
+Checking for existence of the Oracle Grid Infrastructure home /u01/app/11gr2/grid
+The following nodes are part of this cluster: oel1,oel2
+Checking for sufficient temp space availability on node(s) : 'oel1,oel2'
+
+ ## [END] Install check configuration ##
+
+ Network Configuration check config START
+
+ Network de-configuration trace file location: /u01/app/oracle/oraInventory/logs/netdc_check2014-03-29_11-21-30-PM.log
+
+ Specify all RAC listeners (do not include SCAN listener) that are to be de-configured [ORCL_LISTENER]:
+
+ Network Configuration check config END
+
+ Database Check Configuration START
+
+ Database de-configuration trace file location: /u01/app/oracle/oraInventory/logs/databasedc_check2014-03-29_11-21-39-PM.log
+
+ Use comma as separator when specifying list of values as input
+
+ Specify the list of database names that are configured in this Oracle home []: orcl
+
+ ###### For Database 'orcl' ######
+
+ Specify the type of this database (1.Single Instance Database|2.Oracle Restart Enabled Database|3.RAC Database|4.RAC One Node Database) [2]: 3
+Specify the list of nodes on which this database has instances []: oel1,oel2
+Specify the list of instance names [orcl]: orcl1,orcl2
+Specify the local instance name on node   []: orcl1
+Specify the diagnostic destination location of the database [/u01/app/oracle/diag/rdbms/orcl]:
+Specify the storage type used by the Database ASM|FS []: ASM
+
+ Database Check Configuration END
+
+ Enterprise Manager Configuration Assistant START
+
+ EMCA de-configuration trace file location: /u01/app/oracle/oraInventory/logs/emcadc_check2014-03-29_11-22-27-PM.log
+
+ Checking configuration for database orcl
+Enterprise Manager Configuration Assistant END
+Oracle Configuration Manager check START
+OCM check log file location : /u01/app/oracle/oraInventory/logs//ocm_check6234.log
+Oracle Configuration Manager check END
+
+ ######################### CHECK OPERATION END #########################
+
+ ####################### CHECK OPERATION SUMMARY #######################
+Oracle Grid Infrastructure Home is: /u01/app/11gr2/grid
+The cluster node(s) on which the Oracle home deinstallation will be performed are:oel1,oel2
+Oracle Home selected for deinstall is: /u01/app/oracle/product/11.2.0/db_1
+Inventory Location where the Oracle home registered is: /u01/app/oracle/oraInventory
+Following RAC listener(s) will be de-configured: ORCL_LISTENER
+The following databases were selected for de-configuration : orcl
+Database unique name : orcl
+Storage used : ASM
+No Enterprise Manager configuration to be updated for any database(s)
+No Enterprise Manager ASM targets to update
+No Enterprise Manager listener targets to migrate
+Checking the config status for CCR
+oel1 : Oracle Home exists with CCR directory, but CCR is not configured
+oel2 : Oracle Home exists with CCR directory, but CCR is not configured
+CCR check is finished
+Do you want to continue (y - yes, n - no)? [n]: y
+A log of this session will be written to: '/u01/app/oracle/oraInventory/logs/deinstall_deconfig2014-03-29_11-21-05-PM.out'
+Any error messages from this session will be written to: '/u01/app/oracle/oraInventory/logs/deinstall_deconfig2014-03-29_11-21-05-PM.err'
+
+ ######################## CLEAN OPERATION START ########################
+
+ Enterprise Manager Configuration Assistant START
+
+ EMCA de-configuration trace file location: /u01/app/oracle/oraInventory/logs/emcadc_clean2014-03-29_11-22-27-PM.log
+
+ Updating Enterprise Manager ASM targets (if any)
+Updating Enterprise Manager listener targets (if any)
+Enterprise Manager Configuration Assistant END
+Database de-configuration trace file location: /u01/app/oracle/oraInventory/logs/databasedc_clean2014-03-29_11-22-37-PM.log
+Database Clean Configuration START orcl
+This operation may take few minutes.
+Database Clean Configuration END orcl
+
+ Network Configuration clean config START
+
+ Network de-configuration trace file location: /u01/app/oracle/oraInventory/logs/netdc_clean2014-03-29_11-23-20-PM.log
+
+ De-configuring RAC listener(s): ORCL_LISTENER
+
+ De-configuring listener: ORCL_LISTENER
+    Stopping listener: ORCL_LISTENER
+    Listener stopped successfully.
+    Unregistering listener: ORCL_LISTENER
+    Listener unregistered successfully.
+Listener de-configured successfully.
+
+ De-configuring Listener configuration file on all nodes...
+Listener configuration file de-configured successfully.
+
+ De-configuring Naming Methods configuration file on all nodes...
+Naming Methods configuration file de-configured successfully.
+
+ De-configuring Local Net Service Names configuration file on all nodes...
+Local Net Service Names configuration file de-configured successfully.
+
+ De-configuring Directory Usage configuration file on all nodes...
+Directory Usage configuration file de-configured successfully.
+
+ De-configuring backup files on all nodes...
+Backup files de-configured successfully.
+
+ The network configuration has been cleaned up successfully.
+
+ Network Configuration clean config END
+
+ Oracle Configuration Manager clean START
+OCM clean log file location : /u01/app/oracle/oraInventory/logs//ocm_clean6234.log
+Oracle Configuration Manager clean END
+Setting the force flag to false
+Setting the force flag to cleanup the Oracle Base
+Oracle Universal Installer clean START
+
+ Detach Oracle home '/u01/app/oracle/product/11.2.0/db_1' from the central inventory on the local node : Done
+
+ Delete directory '/u01/app/oracle/product/11.2.0/db_1' on the local node : Done
+
+ The Oracle Base directory '/u01/app/oracle' will not be removed on local node. The directory is in use by Oracle Home '/u01/app/oracle/product/crs'.
+
+ The Oracle Base directory '/u01/app/oracle' will not be removed on local node. The directory is in use by central inventory.
+
+ Detach Oracle home '/u01/app/oracle/product/11.2.0/db_1' from the central inventory on the remote nodes 'oel2' : Done
+
+ Delete directory '/u01/app/oracle/product/11.2.0/db_1' on the remote nodes 'oel2' : Done
+
+ The Oracle Base directory '/u01/app/oracle' will not be removed on node 'oel2'. The directory is in use by Oracle Home '/u01/app/oracle/product/crs'.
+
+ The Oracle Base directory '/u01/app/oracle' will not be removed on node 'oel2'. The directory is in use by central inventory.
+
+ Oracle Universal Installer cleanup was successful.
+
+ Oracle Universal Installer clean END
+
+ ## [START] Oracle install clean ##
+
+ Clean install operation removing temporary directory '/tmp/deinstall2014-03-29_11-18-22PM' on node 'oel1'
+Clean install operation removing temporary directory '/tmp/deinstall2014-03-29_11-18-22PM' on node 'oel2'
+
+ ## [END] Oracle install clean ##
+
+ ######################### CLEAN OPERATION END #########################
+
+ ####################### CLEAN OPERATION SUMMARY #######################
+Successfully de-configured the following database instances : orcl
+Following RAC listener(s) were de-configured successfully: ORCL_LISTENER
+Cleaning the config for CCR
+As CCR is not configured, so skipping the cleaning of CCR configuration
+CCR clean is finished
+Successfully detached Oracle home '/u01/app/oracle/product/11.2.0/db_1' from the central inventory on the local node.
+Successfully deleted directory '/u01/app/oracle/product/11.2.0/db_1' on the local node.
+Successfully detached Oracle home '/u01/app/oracle/product/11.2.0/db_1' from the central inventory on the remote nodes 'oel2'.
+Successfully deleted directory '/u01/app/oracle/product/11.2.0/db_1' on the remote nodes 'oel2'.
+Oracle Universal Installer cleanup was successful.
+
+ Run 'rm -rf /opt/ORCLfmap' as root on node(s) 'oel2' at the end of the session.
+Oracle deinstall tool successfully cleaned up temporary directories.
+#######################################################################
+
+ ############# ORACLE DEINSTALL & DECONFIG TOOL END #############
+
+ [oracle@oel1:/home/oracle]$
+[oracle@oel1:/home/oracle]$ ll /u01/app/oracle/product/11.2.0/
+total 0
+[root@oel2:/root]# rm -rf /opt/ORCLfmap
+```
+3.以root用户登录节点1，执行以下脚本
+```
+[root@oel1:/root]# /u01/app/11gr2/grid/crs/install/rootcrs.pl -verbose -deconfig –force
+Using configuration parameter file: /u01/app/11gr2/grid/crs/install/crsconfig_params
+Network exists: 1/192.168.56.0/255.255.255.0/eth0, type static
+VIP exists: /orcl1-vip/192.168.56.125/192.168.56.0/255.255.255.0/eth0, hosting node oel1
+VIP exists: /orcl2-vip/192.168.56.126/192.168.56.0/255.255.255.0/eth0, hosting node oel2
+GSD exists
+ONS exists: Local port 6100, remote port 6200, EM port 2016
+CRS-2673: Attempting to stop 'ora.registry.acfs' on 'oel1'
+CRS-2677: Stop of 'ora.registry.acfs' on 'oel1' succeeded
+CRS-2791: Starting shutdown of Oracle High Availability Services-managed resources on 'oel1'
+CRS-2673: Attempting to stop 'ora.crsd' on 'oel1'
+CRS-2790: Starting shutdown of Cluster Ready Services-managed resources on 'oel1'
+CRS-2673: Attempting to stop 'ora.DATA.dg' on 'oel1'
+CRS-2673: Attempting to stop 'ora.OCR.dg' on 'oel1'
+CRS-2677: Stop of 'ora.DATA.dg' on 'oel1' succeeded
+CRS-2677: Stop of 'ora.OCR.dg' on 'oel1' succeeded
+CRS-2673: Attempting to stop 'ora.asm' on 'oel1'
+CRS-2677: Stop of 'ora.asm' on 'oel1' succeeded
+CRS-2792: Shutdown of Cluster Ready Services-managed resources on 'oel1' has completed
+CRS-2677: Stop of 'ora.crsd' on 'oel1' succeeded
+CRS-2673: Attempting to stop 'ora.drivers.acfs' on 'oel1'
+CRS-2673: Attempting to stop 'ora.ctssd' on 'oel1'
+CRS-2673: Attempting to stop 'ora.evmd' on 'oel1'
+CRS-2673: Attempting to stop 'ora.asm' on 'oel1'
+CRS-2673: Attempting to stop 'ora.mdnsd' on 'oel1'
+CRS-2677: Stop of 'ora.evmd' on 'oel1' succeeded
+CRS-2677: Stop of 'ora.ctssd' on 'oel1' succeeded
+CRS-2677: Stop of 'ora.mdnsd' on 'oel1' succeeded
+CRS-2677: Stop of 'ora.drivers.acfs' on 'oel1' succeeded
+CRS-2677: Stop of 'ora.asm' on 'oel1' succeeded
+CRS-2673: Attempting to stop 'ora.cluster_interconnect.haip' on 'oel1'
+CRS-2677: Stop of 'ora.cluster_interconnect.haip' on 'oel1' succeeded
+CRS-2673: Attempting to stop 'ora.cssd' on 'oel1'
+CRS-2677: Stop of 'ora.cssd' on 'oel1' succeeded
+CRS-2673: Attempting to stop 'ora.crf' on 'oel1'
+CRS-2677: Stop of 'ora.crf' on 'oel1' succeeded
+CRS-2673: Attempting to stop 'ora.gipcd' on 'oel1'
+CRS-2677: Stop of 'ora.gipcd' on 'oel1' succeeded
+CRS-2673: Attempting to stop 'ora.gpnpd' on 'oel1'
+CRS-2677: Stop of 'ora.gpnpd' on 'oel1' succeeded
+CRS-2793: Shutdown of Oracle High Availability Services-managed resources on 'oel1' has completed
+CRS-4133: Oracle High Availability Services has been stopped.
+Removing Trace File Analyzer
+Successfully deconfigured Oracle clusterware stack on this node
+[root@oel1:/root]#
+```
+4.在第二个节点，以root用户执行以下脚本，以清除OCR及votedisk信息
+```
+[root@oel2:/root]# /u01/app/11gr2/grid/crs/install/rootcrs.pl -verbose -deconfig -force -lastnode
+Using configuration parameter file: /u01/app/11gr2/grid/crs/install/crsconfig_params
+CRS resources for listeners are still configured
+Network exists: 1/192.168.56.0/255.255.255.0/eth0, type static
+VIP exists: /orcl2-vip/192.168.56.126/192.168.56.0/255.255.255.0/eth0, hosting node oel2
+GSD exists
+ONS exists: Local port 6100, remote port 6200, EM port 2016
+CRS-2673: Attempting to stop 'ora.registry.acfs' on 'oel2'
+CRS-2677: Stop of 'ora.registry.acfs' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.crsd' on 'oel2'
+CRS-2790: Starting shutdown of Cluster Ready Services-managed resources on 'oel2'
+CRS-2673: Attempting to stop 'ora.DATA.dg' on 'oel2'
+CRS-2673: Attempting to stop 'ora.OCR.dg' on 'oel2'
+CRS-2673: Attempting to stop 'ora.oc4j' on 'oel2'
+CRS-2677: Stop of 'ora.DATA.dg' on 'oel2' succeeded
+CRS-2677: Stop of 'ora.OCR.dg' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.asm' on 'oel2'
+CRS-2677: Stop of 'ora.asm' on 'oel2' succeeded
+CRS-2677: Stop of 'ora.oc4j' on 'oel2' succeeded
+CRS-2792: Shutdown of Cluster Ready Services-managed resources on 'oel2' has completed
+CRS-2677: Stop of 'ora.crsd' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.ctssd' on 'oel2'
+CRS-2673: Attempting to stop 'ora.evmd' on 'oel2'
+CRS-2673: Attempting to stop 'ora.asm' on 'oel2'
+CRS-2677: Stop of 'ora.evmd' on 'oel2' succeeded
+CRS-2677: Stop of 'ora.asm' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.cluster_interconnect.haip' on 'oel2'
+CRS-2677: Stop of 'ora.cluster_interconnect.haip' on 'oel2' succeeded
+CRS-2677: Stop of 'ora.ctssd' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.cssd' on 'oel2'
+CRS-2677: Stop of 'ora.cssd' on 'oel2' succeeded
+CRS-2672: Attempting to start 'ora.cssdmonitor' on 'oel2'
+CRS-2676: Start of 'ora.cssdmonitor' on 'oel2' succeeded
+CRS-2672: Attempting to start 'ora.cssd' on 'oel2'
+CRS-2672: Attempting to start 'ora.diskmon' on 'oel2'
+CRS-2676: Start of 'ora.diskmon' on 'oel2' succeeded
+CRS-2676: Start of 'ora.cssd' on 'oel2' succeeded
+CRS-4611: Successful deletion of voting disk +OCR.
+ASM de-configuration trace file location: /tmp/asmcadc_clean2014-03-29_11-48-42-PM.log
+ASM Clean Configuration START
+ASM Clean Configuration END
+
+ ASM with SID +ASM1 deleted successfully. Check /tmp/asmcadc_clean2014-03-29_11-48-42-PM.log for details.
+
+ CRS-2791: Starting shutdown of Oracle High Availability Services-managed resources on 'oel2'
+CRS-2673: Attempting to stop 'ora.mdnsd' on 'oel2'
+CRS-2673: Attempting to stop 'ora.crf' on 'oel2'
+CRS-2673: Attempting to stop 'ora.ctssd' on 'oel2'
+CRS-2673: Attempting to stop 'ora.asm' on 'oel2'
+CRS-2677: Stop of 'ora.crf' on 'oel2' succeeded
+CRS-2677: Stop of 'ora.mdnsd' on 'oel2' succeeded
+CRS-2677: Stop of 'ora.ctssd' on 'oel2' succeeded
+CRS-2677: Stop of 'ora.asm' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.cluster_interconnect.haip' on 'oel2'
+CRS-2677: Stop of 'ora.cluster_interconnect.haip' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.cssd' on 'oel2'
+CRS-2677: Stop of 'ora.cssd' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.gipcd' on 'oel2'
+CRS-2677: Stop of 'ora.gipcd' on 'oel2' succeeded
+CRS-2673: Attempting to stop 'ora.gpnpd' on 'oel2'
+CRS-2677: Stop of 'ora.gpnpd' on 'oel2' succeeded
+CRS-2793: Shutdown of Oracle High Availability Services-managed resources on 'oel2' has completed
+CRS-4133: Oracle High Availability Services has been stopped.
+Removing Trace File Analyzer
+Successfully deconfigured Oracle clusterware stack on this node
+```
+5.以GI用户(grid)删除GI软件
+```
+[grid@oel1:/home/grid]$ /u01/app/11gr2/grid/deinstall/deinstall
+Checking for required files and bootstrapping ...
+Please wait ...
+Location of logs /u01/app/oracle/oraInventory/logs/
+
+ ############ ORACLE DEINSTALL & DECONFIG TOOL START ############
+
+ ######################### CHECK OPERATION START #########################
+## [START] Install check configuration ##
+
+ Checking for existence of the Oracle home location /u01/app/11gr2/grid
+Oracle Home type selected for deinstall is: Oracle Grid Infrastructure for a Cluster
+Oracle Base selected for deinstall is: /u01/app/grid
+Checking for existence of central inventory location /u01/app/oracle/oraInventory
+Checking for existence of the Oracle Grid Infrastructure home
+The following nodes are part of this cluster: oel1,oel2
+Checking for sufficient temp space availability on node(s) : 'oel1,oel2'
+
+ ## [END] Install check configuration ##
+
+ Traces log file: /u01/app/oracle/oraInventory/logs//crsdc.log
+Enter an address or the name of the virtual IP used on node "oel1"[null]
+ >
+orcl1-vip
+The following information can be collected by running "/sbin/ifconfig -a" on node "oel1"
+Enter the IP netmask of Virtual IP "192.168.56.125" on node "oel1"[255.255.255.0]
+ >
+
+ Enter the network interface name on which the virtual IP address "192.168.56.125" is active
+ >
+eth0
+Enter an address or the name of the virtual IP used on node "oel2"[192.168.56.125]
+ >
+orcl2-vip
+The following information can be collected by running "/sbin/ifconfig -a" on node "oel2"
+Enter the IP netmask of Virtual IP "192.168.56.126" on node "oel2"[255.255.255.0]
+ >
+
+ Enter the network interface name on which the virtual IP address "192.168.56.126" is active[eth0]
+ >
+
+ Enter an address or the name of the virtual IP[]
+ >
+
+ Network Configuration check config START
+
+ Network de-configuration trace file location: /u01/app/oracle/oraInventory/logs/netdc_check2014-03-29_11-55-42-PM.log
+
+ Specify all RAC listeners (do not include SCAN listener) that are to be de-configured [LISTENER,LISTENER_SCAN3,LISTENER_SCAN2,LISTENER_SCAN1]:
+
+ Network Configuration check config END
+
+ Asm Check Configuration START
+
+ ASM de-configuration trace file location: /u01/app/oracle/oraInventory/logs/asmcadc_check2014-03-29_11-55-50-PM.log
+
+ ASM configuration was not detected in this Oracle home. Was ASM configured in this Oracle home (y|n) [n]: y
+Is OCR/Voting Disk placed in ASM y|n [n]: y
+
+ Enter the OCR/Voting Disk diskgroup name []: OCR
+Specify the ASM Diagnostic Destination [ ]: /u01/app/oracle
+Specify the diskstring []: /dev/oracleasm/OCR*
+Specify the diskgroups that are managed by this ASM instance []: DATA
+
+ De-configuring ASM will drop the diskgroups at cleanup time. Do you want deconfig tool to drop the diskgroups y|n [y]:
+
+ ######################### CHECK OPERATION END #########################
+
+ ####################### CHECK OPERATION SUMMARY #######################
+Oracle Grid Infrastructure Home is:
+The cluster node(s) on which the Oracle home deinstallation will be performed are:oel1,oel2
+Oracle Home selected for deinstall is: /u01/app/11gr2/grid
+Inventory Location where the Oracle home registered is: /u01/app/oracle/oraInventory
+Following RAC listener(s) will be de-configured: LISTENER,LISTENER_SCAN3,LISTENER_SCAN2,LISTENER_SCAN1
+ASM instance will be de-configured from this Oracle home
+Do you want to continue (y - yes, n - no)? [n]: y
+A log of this session will be written to: '/u01/app/oracle/oraInventory/logs/deinstall_deconfig2014-03-29_11-53-59-PM.out'
+Any error messages from this session will be written to: '/u01/app/oracle/oraInventory/logs/deinstall_deconfig2014-03-29_11-53-59-PM.err'
+
+ ######################## CLEAN OPERATION START ########################
+ASM de-configuration trace file location: /u01/app/oracle/oraInventory/logs/asmcadc_clean2014-03-29_11-57-28-PM.log
+ASM Clean Configuration START
+ASM Clean Configuration END
+
+ Network Configuration clean config START
+
+ Network de-configuration trace file location: /u01/app/oracle/oraInventory/logs/netdc_clean2014-03-29_11-57-33-PM.log
+
+ De-configuring RAC listener(s): LISTENER,LISTENER_SCAN3,LISTENER_SCAN2,LISTENER_SCAN1
+
+ De-configuring listener: LISTENER
+    Stopping listener: LISTENER
+    Warning: Failed to stop listener. Listener may not be running.
+Listener de-configured successfully.
+
+ De-configuring listener: LISTENER_SCAN3
+    Stopping listener: LISTENER_SCAN3
+    Warning: Failed to stop listener. Listener may not be running.
+Listener de-configured successfully.
+
+ De-configuring listener: LISTENER_SCAN2
+    Stopping listener: LISTENER_SCAN2
+    Warning: Failed to stop listener. Listener may not be running.
+Listener de-configured successfully.
+
+ De-configuring listener: LISTENER_SCAN1
+    Stopping listener: LISTENER_SCAN1
+    Warning: Failed to stop listener. Listener may not be running.
+Listener de-configured successfully.
+
+ De-configuring Naming Methods configuration file on all nodes...
+Naming Methods configuration file de-configured successfully.
+
+ De-configuring Local Net Service Names configuration file on all nodes...
+Local Net Service Names configuration file de-configured successfully.
+
+ De-configuring Directory Usage configuration file on all nodes...
+Directory Usage configuration file de-configured successfully.
+
+ De-configuring backup files on all nodes...
+Backup files de-configured successfully.
+
+ The network configuration has been cleaned up successfully.
+
+ Network Configuration clean config END
+
+ ---------------------------------------->
+
+ The deconfig command below can be executed in parallel on all the remote nodes. Execute the command on  the local node after the execution completes on all the remote nodes.
+
+ Run the following command as the root user or the administrator on node "oel2".
+
+ /tmp/deinstall2014-03-29_11-52-47PM/perl/bin/perl -I/tmp/deinstall2014-03-29_11-52-47PM/perl/lib -I/tmp/deinstall2014-03-29_11-52-47PM/crs/install /tmp/deinstall2014-03-29_11-52-47PM/crs/install/rootcrs.pl -force  -deconfig -paramfile "/tmp/deinstall2014-03-29_11-52-47PM/response/deinstall_Ora11g_gridinfrahome1.rsp"
+
+ Run the following command as the root user or the administrator on node "oel1".
+
+ /tmp/deinstall2014-03-29_11-52-47PM/perl/bin/perl -I/tmp/deinstall2014-03-29_11-52-47PM/perl/lib -I/tmp/deinstall2014-03-29_11-52-47PM/crs/install /tmp/deinstall2014-03-29_11-52-47PM/crs/install/rootcrs.pl -force  -deconfig -paramfile "/tmp/deinstall2014-03-29_11-52-47PM/response/deinstall_Ora11g_gridinfrahome1.rsp" -lastnode
+
+ Press Enter after you finish running the above commands
+
+ <----------------------------------------
+```
+6.保持上述deinstall窗口，分别在两个节点执行上述最后两个脚本，这个脚本可以并行执行
+```
+node 2:
+[root@oel2:/root]# /tmp/deinstall2014-03-29_11-52-47PM/perl/bin/perl -I/tmp/deinstall2014-03-29_11-52-47PM/perl/lib -I/tmp/deinstall2014-03-29_11-52-47PM/crs/install /tmp/deinstall2014-03-29_11-52-47PM/crs/install/rootcrs.pl -force  -deconfig -paramfile "/tmp/deinstall2014-03-29_11-52-47PM/response/deinstall_Ora11g_gridinfrahome1.rsp"
+Using configuration parameter file: /tmp/deinstall2014-03-29_11-52-47PM/response/deinstall_Ora11g_gridinfrahome1.rsp
+****Unable to retrieve Oracle Clusterware home.
+Start Oracle Clusterware stack and try again.
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Stop failed, or completed with errors.
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Modify failed, or completed with errors.
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Delete failed, or completed with errors.
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Stop failed, or completed with errors.
+################################################################
+# You must kill processes or reboot the system to properly #
+# cleanup the processes started by Oracle clusterware          #
+################################################################
+ACFS-9313: No ADVM/ACFS installation detected.
+Either /etc/oracle/olr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Either /etc/oracle/olr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Failure in execution (rc=-1, 256, No such file or directory) for command /etc/init.d/ohasd deinstall
+error: package cvuqdisk is not installed
+Successfully deconfigured Oracle clusterware stack on this node
+
+ Node1:
+[root@oel1:/root]# /tmp/deinstall2014-03-29_11-52-47PM/perl/bin/perl -I/tmp/deinstall2014-03-29_11-52-47PM/perl/lib -I/tmp/deinstall2014-03-29_11-52-47PM/crs/install /tmp/deinstall2014-03-29_11-52-47PM/crs/install/rootcrs.pl -force  -deconfig -paramfile "/tmp/deinstall2014-03-29_11-52-47PM/response/deinstall_Ora11g_gridinfrahome1.rsp" -lastnode
+Using configuration parameter file: /tmp/deinstall2014-03-29_11-52-47PM/response/deinstall_Ora11g_gridinfrahome1.rsp
+Adding Clusterware entries to inittab
+/crs/install/inittab does not exist.
+****Unable to retrieve Oracle Clusterware home.
+Start Oracle Clusterware stack and try again.
+****Unable to retrieve Oracle Clusterware home.
+Start Oracle Clusterware stack and try again.
+****Unable to retrieve Oracle Clusterware home.
+Start Oracle Clusterware stack and try again.
+****Unable to retrieve Oracle Clusterware home.
+Start Oracle Clusterware stack and try again.
+****Unable to retrieve Oracle Clusterware home.
+Start Oracle Clusterware stack and try again.
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Stop failed, or completed with errors.
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Delete failed, or completed with errors.
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Modify failed, or completed with errors.
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Delete failed, or completed with errors.
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+CRS-4047: No Oracle Clusterware components configured.
+CRS-4000: Command Stop failed, or completed with errors.
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+################################################################
+# You must kill processes or reboot the system to properly #
+# cleanup the processes started by Oracle clusterware          #
+################################################################
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Either /etc/oracle/ocr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+ACFS-9313: No ADVM/ACFS installation detected.
+Either /etc/oracle/olr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Either /etc/oracle/olr.loc does not exist or is not readable
+Make sure the file exists and it has read and execute access
+Failure in execution (rc=-1, 256, No such file or directory) for command /etc/init.d/ohasd deinstall
+error: package cvuqdisk is not installed
+Successfully deconfigured Oracle clusterware stack on this node
+```
+7.回到刚才deinstall窗口，按回车,完成删除动作
+```
+Press Enter after you finish running the above commands
+
+ <----------------------------------------
+
+ Setting the force flag to false
+Setting the force flag to cleanup the Oracle Base
+Oracle Universal Installer clean START
+
+ Detach Oracle home '/u01/app/11gr2/grid' from the central inventory on the local node : Done
+
+ Delete directory '/u01/app/11gr2/grid' on the local node : Done
+
+ Delete directory '/u01/app/grid' on the local node : Done
+
+ Detach Oracle home '/u01/app/11gr2/grid' from the central inventory on the remote nodes 'oel2' : Done
+
+ Delete directory '/u01/app/11gr2/grid' on the remote nodes 'oel2' : Done
+
+ Delete directory '/u01/app/grid' on the remote nodes 'oel2' : Done
+
+ Oracle Universal Installer cleanup was successful.
+
+ Oracle Universal Installer clean END
+
+ ## [START] Oracle install clean ##
+
+ Clean install operation removing temporary directory '/tmp/deinstall2014-03-29_11-52-47PM' on node 'oel1'
+Clean install operation removing temporary directory '/tmp/deinstall2014-03-29_11-52-47PM' on node 'oel2'
+
+ ## [END] Oracle install clean ##
+
+ ######################### CLEAN OPERATION END #########################
+
+ ####################### CLEAN OPERATION SUMMARY #######################
+ASM instance was de-configured successfully from the Oracle home
+Following RAC listener(s) were de-configured successfully: LISTENER,LISTENER_SCAN3,LISTENER_SCAN2,LISTENER_SCAN1
+Oracle Clusterware is stopped and successfully de-configured on node "oel1"
+Oracle Clusterware is stopped and successfully de-configured on node "oel2"
+Oracle Clusterware is stopped and de-configured successfully.
+Successfully detached Oracle home '/u01/app/11gr2/grid' from the central inventory on the local node.
+Successfully deleted directory '/u01/app/11gr2/grid' on the local node.
+Successfully deleted directory '/u01/app/grid' on the local node.
+Successfully detached Oracle home '/u01/app/11gr2/grid' from the central inventory on the remote nodes 'oel2'.
+Successfully deleted directory '/u01/app/11gr2/grid' on the remote nodes 'oel2'.
+Successfully deleted directory '/u01/app/grid' on the remote nodes 'oel2'.
+Oracle Universal Installer cleanup was successful.
+
+ Oracle deinstall tool successfully cleaned up temporary directories.
+#######################################################################
+
+ ############# ORACLE DEINSTALL & DECONFIG TOOL END #############
+
+[grid@oel1:/home/grid]$
+
+[root@oel1:/root]# rm -rf /etc/oraInst.loc
+[root@oel2:/root]# rm -rf /etc/oraInst.loc
+[root@oel1:/root]# rm -rf /opt/ORCLfmap/
+```
+
+

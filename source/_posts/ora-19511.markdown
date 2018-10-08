@@ -1,0 +1,63 @@
+---
+layout: post
+title: "ORA-19511"
+date: 2014-12-16 10:37:15
+comments: false
+categories: oracle
+tags: ora-19511
+keywords: NBU,ora-19511
+description: Communication with the server has not been initiated or the server status has not been retrieved from the serve
+---
+客户最近因升级主机，NBU客户端重新安装，最近说NBU备份Oracle老是报错。我过去现场一看，最早记录10月份，从那时开始一直在报错，这一个多月就从没备份成功过。很有可能NBU客户端安装后就一直备份不成功，但是客户一直没发现。
+<!--more-->
+### 1.现象
+当时重现了一下错误过程，从RMAN后台日志发现第一个backup piece能成功备份，第二个开始报错，RMAN报错信息如下：
+```
+RMAN-03009: failure of backup command on ch01 channel at 11/17/2014 15:59:51
+ORA-19506: failed to create sequential file, name="al_37873_1_863883864", parms=""
+ORA-27028: skgfqcre: sbtbackup returned error
+ORA-19511: Error received from media manager layer, error text:
+   VxBSACreateObject: Failed with error:
+   Server Status:  Communication with the server has not been initiated or the server status has not been retrieved from
+ the serve
+RMAN-03009: failure of backup command on ch00 channel at 11/17/2014 15:59:51
+ORA-19506: failed to create sequential file, name="al_37872_1_863883864", parms=""
+ORA-27028: skgfqcre: sbtbackup returned error
+ORA-19511: Error received from media manager layer, error text:
+   VxBSACreateObject: Failed with error:
+   Server Status:  Communication with the server has not been initiated or the server status has not been retrieved from
+ the serve
+```
+### 2.可能的解决方法
+### 2.1 主机名解析及连通性
+首先我想到的是客户端和server端主机名/etc/hosts及bp.conf的解析，但是相互解析都是OK的。  
+在client端执行：
+```
+/usr/openv/netbackup/bin/bptestnetconn -as -sc
+```
+进一步我想查看日志，没有相关日志目录，在客户端自己创建一个。
+```
+mkdir -p /usr/openv/netbackup/logs/bpdbm
+mkdir -p /usr/openv/netbackup/logs/bpdbm
+mkdir -p /usr/openv/netbackup/logs/bptm
+mkdir -p /usr/openv/netbackup/logs/bpcd
+mkdir -p /usr/openv/netbackup/logs/vnetd
+mkdir -p /usr/openv/netbackup/logs/bprd
+mkdir -p /usr/openv/netbackup/logs/dbclient
+chmod -R 777 /usr/openv/netbackup/logs
+```
+重新运行备份作业，并没有得到有用的日志信息。  
+#### 2.2 在备份脚本中执行backup server、client及policy
+```
+SEND 'NB_ORA_SERV=Master,NB_ORA_CLIENT=Client,NB_ORA_POLICY=oracle_arch';
+```
+重新尝试备份，结果依旧一样。
+### 3.问题的解决
+继续“盘问”客户，得知这是一套HACMP架构，而bp.conf里面使用的是虚拟IP地址，且有多网卡。  
+在bp.conf中指定使用那张网卡，问题得到解决。
+```
+SERVER = backupserver
+CLIENT_NAME = oracle
+REQUIRED_INTERFACE = 192.168.11.155
+```
+其实这是一个很简单的问题，处理时间比较久是因为本身对NBU备份HA不熟悉。

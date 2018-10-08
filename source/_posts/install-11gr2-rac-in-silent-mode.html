@@ -1,0 +1,734 @@
+---
+layout: post
+title: Step by step install 11gr2 RAC in silent mode
+categories:
+- oracle
+tags:
+- installation
+published: true
+comments: false
+date: 2013-09-12
+---
+本文实验环境以vbox虚拟机，OEL5.8 X64下完成，ASM底层采取udev管理。以下为详细实验步骤，留给以后参考。OS安装及共享设备设置略过。非明确指出，即表明所做操作为两个节点。
+<!--more-->
+<h1>1.安装前准备</h1>
+<h2>1.1.关闭非必要进程</h2>
+<pre>
+chkconfig acpid off 
+chkconfig autofs off 
+chkconfig avahi-daemon off 
+chkconfig bluetooth off 
+chkconfig hidd off 
+chkconfig cups off 
+chkconfig cpuspeed off 
+chkconfig --level 245 gpm off 
+chkconfig hplip off 
+chkconfig ip6tables off 
+chkconfig iptables off 
+chkconfig irqbalance off 
+chkconfig isdn off 
+chkconfig lm_sensors off 
+chkconfig mcstrans off 
+chkconfig netfs off 
+chkconfig nfslock off 
+chkconfig pcscd off 
+chkconfig portmap off 
+chkconfig restorecond off 
+chkconfig rpcgssd off 
+chkconfig rpcidmapd off 
+chkconfig sendmail off 
+chkconfig smartd off 
+chkconfig yum-updatesd off 
+chkconfig xfs off 
+chkconfig microcode_ctl off 
+chkconfig iscsi off 
+chkconfig iscsid off
+</pre>
+<h2>1.2.安装oracle-validated</h2>
+Oracle-validated是OEL自带的oracle安装环境部署设置，包括内核参数、用户设置等。首先配置yum本地源，先将光盘mount至/mnt，再通过yum设置/mnt为本地源：
+```
+[root@node1 app]# cd /etc/yum.repos.d/ 
+[root@node1 app]# vi  rhel-debuginfo.repo 
+[root@node1 app]# cat /etc/yum.repos.d/rhel-debuginfo.repo  
+[Server] 
+name=Server 
+baseurl=file:///mnt/Server 
+enabled=1 
+gpgcheck=0 
+[root@node1 app]# yum search oracle 
+[root@node1 app]# yum install oracle-validated
+```
+<h2>1.3.创建用户环境</h2>
+由于oracle-validated只是增加了oracle用户，GI拥有着gird用户需要我们自己创建，
+```
+[root@node1 app]# id oracle 
+uid=54321(oracle) gid=54321(oinstall) groups=54321(oinstall),54322(dba) 
+[root@node1 app]# useradd -u 54322 -g oinstall grid 
+[root@node1:/root]# groupadd -g 54323 asmdba 
+[root@node1:/root]# groupadd -g 54324 asmadmin 
+[root@node1:/root]# usermod -G oinstall,asmadmin,asmdba,dba grid 
+[root@node1:/root]# usermod -G oinstall,asmdba,dba oracle
+```
+
+修改密码：
+```
+#passwd oracle 
+#passwd grid
+```
+添加环境变量：
+```
+[root@node2 u01]# cat /home/grid/.bash_profile  
+... 
+export TMP=/tmp 
+export TMPDIR=$TMP 
+export ORACLE_SID=+ASM2 
+export ORACLE_BASE=/u01/app/grid 
+export ORACLE_HOME=/u01/app/11gr2/grid 
+export JAVA_HOME=$ORACLE_HOME/jdk 
+export ORACLE_TERM=xterm 
+export NLS_DATE_FORMAT="yyyy-mm-dd HH24:MI:SS" 
+export ORA_NLS11=$ORACLE_HOME/nls/data 
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib 
+export CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib 
+export PATH=/usr/sbin:$ORACLE_HOME/bin:$JAVA_HOME:$PATH 
+export PS1='[$LOGNAME@$HOSTNAME:$PWD]$ ' 
+umask 022 
+export DISPLAY=192.168.56.1:0.0 
+[root@node2 u01]# cat /home/oracle/.bash_profile  
+…
+export EDITOR=vi 
+export TMP=/tmp 
+export TMPDIR=$TMP 
+export ORACLE_BASE=/u01/app/oracle  
+export ORACLE_HOME=$ORACLE_BASE/product/11gr2/ 
+export JAVA_HOME=$ORACLE_HOME/jdk 
+export ORACLE_SID=racdb2 
+export ORACLE_TERM=xterm 
+export PATH=/usr/sbin:$ORACLE_HOME/bin:$JAVA_HOME:$PATH 
+export ORA_NLS11=$ORACLE_HOME/nls/data 
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib 
+export CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib 
+export NLS_DATE_FORMAT="yyyy-mm-dd HH24:MI:SS" 
+export NLS_LANG=AMERICAN_AMERICA.ZHS16GBK 
+export PS1='[$LOGNAME@$HOSTNAME:$PWD]$ ' 
+umask 022 
+export DISPLAY=192.168.56.1:0.0
+```
+创建相关目录：
+```
+[root@node1 app]# mkdir -p /u01/app/grid 
+[root@node1 app]# mkdir -p /u01/app/11gr2/grid 
+[root@node1 app]# chown -R grid:oinstall /u01/app/ 
+[root@node1 app]# chmod -R 775 /u01/app 
+[root@node1 app]# chown -R grid:oinstall /u01/app/grid 
+[root@node1 app]# chmod -R 775 /u01/app/grid 
+[root@node1 app]# mkdir -p /u01/app/oracle/product/11gr2 
+[root@node1 app]# chown -R oracle:oinstall /u01/app/oracle 
+[root@node1 app]# chmod -R 775 /u01/app/oracle
+```
+移除ntp及dns设置：
+```
+[root@node1 app]# mv /etc/ntp.conf /etc/ntp.conf_bk 
+[root@node1 app]# mv /etc/resolv.conf /etc/resolv.conf_bk
+```
+最后需要在<code>/etc/security/limits.conf</code>将grid用户资源添加进去。
+
+主机IP配置：
+<pre>
+#public IP 
+192.168.56.111         node1 
+192.168.56.112          node2
+
+#priv 
+10.10.10.111            racdb1-priv 
+10.10.10.112            racdb2-priv
+
+#Virtual IP 
+192.168.56.113         racdb1-vip 
+192.168.56.114
+
+#SCAN 
+192.168.56.100         racdb-scan
+</pre>
+<h2>1.4.ssh等效性设置</h2>
+两个节点oracle用户及grid用户的信任机制配置：
+```
+[grid@node1 app]$ mkdir -p ~/.ssh 
+[grid@node1 app]$ chmod 700 ~/.ssh 
+[grid@node1 app]$ ssh-keygen -t rsa 
+[grid@node1 app]$ ssh-keygen -t dsa
+```
+以下操作只需其中一节点完成即可：
+```
+[grid@node1 app]$ cd .ssh  
+[grid@node1 app]$ touch authorized_keys 
+[grid@node1 app]$ cat ~/.ssh/*.pub >>authorized_keys  
+[grid@node1 app]$ ssh node1 cat ~/.ssh/id_rsa.pub >>authorized_keys 
+[grid@node1 app]$ ssh node2 cat ~/.ssh/id_dsa.pub >>authorized_keys 
+[grid@node1 app]$ scp authorized_keys node2:.ssh/authorized_keys
+```
+<h2>1.5.udev共享存储设置</h2>
+创建规则文件：
+```
+[root@node1 app]# touch /etc/udev/rules.d/ 99-oracle-asmdevices.rules
+```
+使用fdisk -l扫描磁盘，并将识别出来的路径取代以下代码中的变量：
+```
+[root@node1 app]# for i in b c d e; 
+> do 
+> echo "KERNEL==\"sd*\", BUS==\"scsi\", PROGRAM==\"/sbin/scsi_id -g -u -s %p\", RESULT==\"`scsi_id -g -u -s /block/sd$i`\", NAME=\"asm-disk$i\", OWNER=\"grid\", GROUP=\"asmadmin\", MODE=\"0660\"" 
+> done
+```
+将以上输出内容添加进规则文件中，重启udev，并且验证：
+```
+[root@node1 app]# start_udev 
+Starting udev: [  OK  ] 
+[root@node1 app]# ll /dev/asm* 
+brw-rw---- 1 grid dba 8, 16 Sep 12 11:02 /dev/asm-diskb 
+brw-rw---- 1 grid dba 8, 32 Sep 12 11:02 /dev/asm-diskc 
+brw-rw---- 1 grid dba 8, 48 Sep 12 11:02 /dev/asm-diskd 
+brw-rw---- 1 grid dba 8, 64 Sep 12 11:02 /dev/asm-diske
+```
+<h1>2.安装GI</h1>
+安装前检查：
+```
+[grid@node1:/worktmp/11g/grid]$ ./runcluvfy.sh stage -pre crsinst -n node1,node2 -verbose 
+Performing pre-checks for cluster services setup
+
+Checking node reachability... 
+...省略部分输出
+
+ Check: Time zone consistency 
+Result: Time zone consistency check passed 
+
+ Pre-check for cluster services setup was successful.
+```
+有不通过的地方要先fixup完才能继续安装。 
+
+ 修改默认响应文件，可以用以下命令提取必要的东西出来，需要了解各项参数含义，请详细阅读默认响应文件：
+```
+[grid@node1:/worktmp/11g/grid/response]$ ll 
+total 28 
+-rw-r--r-- 1 root root 24632 Aug 26 22:01 grid_install.rsp 
+[grid@node1:/worktmp/11g/grid/response]$ cat grid_install.rsp | grep -v ^# | grep -v ^$ > ~/gi.rsp
+```
+修改后的响应文件如下：
+```
+[grid@node1:/worktmp/11g/grid/response]$ cat ~/gi.rsp 
+oracle.install.responseFileVersion=/oracle/install/rspfmt_crsinstall_response_schema_v11_2_0 
+ORACLE_HOSTNAME=node1 
+INVENTORY_LOCATION=/u01/app/oraInventory 
+SELECTED_LANGUAGES=en,zh_CN 
+oracle.install.option=CRS_CONFIG 
+ORACLE_BASE=/u01/app/grid 
+ORACLE_HOME=/u01/app/11gr2/grid 
+oracle.install.asm.OSDBA=asmdba 
+oracle.install.asm.OSOPER= 
+oracle.install.asm.OSASM=asmadmin 
+oracle.install.crs.config.gpnp.scanName=racdb-scan 
+oracle.install.crs.config.gpnp.scanPort=1521 
+oracle.install.crs.config.clusterName=racdb 
+oracle.install.crs.config.gpnp.configureGNS=false 
+oracle.install.crs.config.gpnp.gnsSubDomain= 
+oracle.install.crs.config.gpnp.gnsVIPAddress= 
+oracle.install.crs.config.autoConfigureClusterNodeVIP=false 
+oracle.install.crs.config.clusterNodes=node1:racdb1-vip,node2:racdb2-vip 
+oracle.install.crs.config.networkInterfaceList=eth0:192.168.56.0:1,eth1:10.10.10.0:2 
+oracle.install.crs.config.storageOption=ASM_STORAGE 
+oracle.install.crs.config.sharedFileSystemStorage.diskDriveMapping= 
+oracle.install.crs.config.sharedFileSystemStorage.votingDiskLocations= 
+oracle.install.crs.config.sharedFileSystemStorage.votingDiskRedundancy=NORMAL 
+oracle.install.crs.config.sharedFileSystemStorage.ocrLocations= 
+oracle.install.crs.config.sharedFileSystemStorage.ocrRedundancy=NORMAL 
+oracle.install.crs.config.useIPMI=false 
+oracle.install.crs.config.ipmi.bmcUsername= 
+oracle.install.crs.config.ipmi.bmcPassword= 
+oracle.install.asm.SYSASMPassword=Password123 
+oracle.install.asm.diskGroup.name=CRS 
+oracle.install.asm.diskGroup.redundancy=NORMAL 
+oracle.install.asm.diskGroup.AUSize=1 
+oracle.install.asm.diskGroup.disks=/dev/asm-diskb,/dev/asm-diskc,/dev/asm-diskd 
+oracle.install.asm.diskGroup.diskDiscoveryString=/dev/asm* 
+oracle.install.asm.monitorPassword=Password123 
+oracle.install.crs.upgrade.clusterNodes= 
+oracle.install.asm.upgradeASM=false 
+oracle.installer.autoupdates.option=SKIP_UPDATES 
+oracle.installer.autoupdates.downloadUpdatesLoc= 
+AUTOUPDATES_MYORACLESUPPORT_USERNAME= 
+AUTOUPDATES_MYORACLESUPPORT_PASSWORD= 
+PROXY_HOST= 
+PROXY_PORT= 
+PROXY_USER= 
+PROXY_PWD= 
+PROXY_REALM=
+```
+执行安装程序：
+```
+[grid@node1:/worktmp/11g/grid]$ ./runInstaller -ignorePrereq -silent -force -responseFile ~/gi.rsp 
+Starting Oracle Universal Installer...
+
+ Checking Temp space: must be greater than 120 MB.   Actual 16102 MB    Passed 
+Checking swap space: must be greater than 150 MB.   Actual 4094 MB    Passed 
+Preparing to launch Oracle Universal Installer from /tmp/OraInstall2013-09-12_12-17-53PM.  
+Please wait ... 
+[grid@node1:/worktmp/11g/grid]$ You can find the log of this install session at: 
+ /u01/app/oraInventory/logs/installActions2013-09-12_12-17-53PM.log 
+The installation of Oracle Grid Infrastructure 11g was successful. 
+Please check '/u01/app/oraInventory/logs/silentInstall2013-09-12_12-17-53PM.log' for more details. 
+
+ As a root user, execute the following script(s): 
+        1. /u01/app/oraInventory/orainstRoot.sh 
+        2. /u01/app/11gr2/grid/root.sh 
+
+ Execute /u01/app/oraInventory/orainstRoot.sh on the following nodes:  
+[node1, node2] 
+Execute /u01/app/11gr2/grid/root.sh on the following nodes:  
+[node1, node2] 
+
+ As install user, execute the following script to complete the configuration. 
+        1. /u01/app/11gr2/grid/cfgtoollogs/configToolAllCommands RESPONSE_FILE=<response_file /> 
+
+         Note: 
+        1. This script must be run on the same host from where installer was run.  
+        2. This script needs a small password properties file for configuration assistants  
+that require passwords (refer to install guide documentation). 
+
+ Successfully Setup Software. 
+```
+ 按照提示，分别在两个节点执行以下脚本：
+```
+[root@node1:/home/grid]# /u01/app/oraInventory/orainstRoot.sh 
+Changing permissions of /u01/app/oraInventory. 
+Adding read,write permissions for group. 
+Removing read,write,execute permissions for world.
+
+ Changing groupname of /u01/app/oraInventory to oinstall. 
+The execution of the script is complete.
+
+[root@node1:/home/grid]# /u01/app/11gr2/grid/root.sh 
+Performing root user operation for Oracle 11g 
+
+ The following environment variables are set as: 
+    ORACLE_OWNER= grid 
+    ORACLE_HOME=  /u01/app/11gr2/grid 
+   Copying dbhome to /usr/local/bin ... 
+   Copying oraenv to /usr/local/bin ... 
+   Copying coraenv to /usr/local/bin ... 
+
+ Creating /etc/oratab file... 
+Entries will be added to the /etc/oratab file as needed by 
+Database Configuration Assistant when a database is created 
+Finished running generic part of root script. 
+Now product-specific root actions will be performed. 
+Using configuration parameter file: /u01/app/11gr2/grid/crs/install/crsconfig_params 
+Creating trace directory 
+User ignored Prerequisites during installation 
+Installing Trace File Analyzer 
+OLR initialization - successful 
+  root wallet 
+  root wallet cert 
+  root cert export 
+  peer wallet 
+  profile reader wallet 
+  pa wallet 
+  peer wallet keys 
+  pa wallet keys 
+  peer cert request 
+  pa cert request 
+  peer cert 
+  pa cert 
+  peer root cert TP 
+  profile reader root cert TP 
+  pa root cert TP 
+  peer pa cert TP 
+  pa peer cert TP 
+  profile reader pa cert TP 
+  profile reader peer cert TP 
+  peer user cert 
+  pa user cert 
+Adding Clusterware entries to inittab 
+CRS-2672: Attempting to start 'ora.mdnsd' on 'node1' 
+CRS-2676: Start of 'ora.mdnsd' on 'node1' succeeded 
+CRS-2672: Attempting to start 'ora.gpnpd' on 'node1' 
+CRS-2676: Start of 'ora.gpnpd' on 'node1' succeeded 
+CRS-2672: Attempting to start 'ora.cssdmonitor' on 'node1' 
+CRS-2672: Attempting to start 'ora.gipcd' on 'node1' 
+CRS-2676: Start of 'ora.gipcd' on 'node1' succeeded 
+CRS-2676: Start of 'ora.cssdmonitor' on 'node1' succeeded 
+CRS-2672: Attempting to start 'ora.cssd' on 'node1' 
+CRS-2672: Attempting to start 'ora.diskmon' on 'node1' 
+CRS-2676: Start of 'ora.diskmon' on 'node1' succeeded 
+CRS-2676: Start of 'ora.cssd' on 'node1' succeeded 
+
+ ASM created and started successfully. 
+
+ Disk Group CRS created successfully. 
+
+ clscfg: -install mode specified 
+Successfully accumulated necessary OCR keys. 
+Creating OCR keys for user 'root', privgrp 'root'.. 
+Operation successful. 
+CRS-4256: Updating the profile 
+Successful addition of voting disk 013aab2ab1bf4f2ebf1b13f7237c2ecc. 
+Successful addition of voting disk 5c947e9d03514f3ebf7a7486ab10a8f3. 
+Successful addition of voting disk 5190c7747b184f64bf2ef35e520ea52c. 
+Successfully replaced voting disk group with +CRS. 
+CRS-4256: Updating the profile 
+CRS-4266: Voting file(s) successfully replaced 
+##  STATE    File Universal Id                File Name Disk group 
+--  -----    -----------------                --------- --------- 
+ 1. ONLINE   013aab2ab1bf4f2ebf1b13f7237c2ecc (/dev/asm-diskb) [CRS] 
+ 2. ONLINE   5c947e9d03514f3ebf7a7486ab10a8f3 (/dev/asm-diskc) [CRS] 
+ 3. ONLINE   5190c7747b184f64bf2ef35e520ea52c (/dev/asm-diskd) [CRS] 
+Located 3 voting disk(s). 
+CRS-2672: Attempting to start 'ora.CRS.dg' on 'node1' 
+CRS-2676: Start of 'ora.CRS.dg' on 'node1' succeeded 
+Configure Oracle Grid Infrastructure for a Cluster ... succeeded
+```
+```
+[root@node2 11gr2]# /u01/app/11gr2/grid/root.sh 
+Performing root user operation for Oracle 11g 
+
+ The following environment variables are set as: 
+    ORACLE_OWNER= grid 
+    ORACLE_HOME=  /u01/app/11gr2/grid 
+   Copying dbhome to /usr/local/bin ... 
+   Copying oraenv to /usr/local/bin ... 
+   Copying coraenv to /usr/local/bin ... 
+
+ Creating /etc/oratab file... 
+Entries will be added to the /etc/oratab file as needed by 
+Database Configuration Assistant when a database is created 
+Finished running generic part of root script. 
+Now product-specific root actions will be performed. 
+Using configuration parameter file: /u01/app/11gr2/grid/crs/install/crsconfig_params 
+Creating trace directory 
+User ignored Prerequisites during installation 
+Installing Trace File Analyzer 
+OLR initialization - successful 
+Adding Clusterware entries to inittab 
+CRS-4402: The CSS daemon was started in exclusive mode but found an active CSS daemon on node node1, number 1, and is terminating 
+An active cluster was found during exclusive startup, restarting to join the cluster 
+Configure Oracle Grid Infrastructure for a Cluster ... succeeded
+```
+最后，在安装节点node1以grid用户执行configToolAllCommands命令，此命令是为了创建密码（此命令propetites文件属性请参照<a href="http://docs.oracle.com/cd/E11882_01/install.112/e22489/app_nonint.htm">Grid Infrastructure Installation Guide 11g Release 2 (11.2) for Linux</a>-- B Installing and Configuring Oracle Database Using Response Files）。
+```
+[root@node1:/home/grid]# su - grid 
+[grid@node1:/home/grid]$ cd $ORACLE_HOME/cfgtoollogs 
+[grid@node1:/u01/app/11gr2/grid/cfgtoollogs]$ touch cfgrsp.properties 
+[grid@node1:/u01/app/11gr2/grid/cfgtoollogs]$ cat cfgrsp.properties  
+oracle.assistants.asm|S_ASMPASSWORD=Password123 
+oracle.assistants.asm|S_ASMMONITORPASSWORD=Password123 
+[grid@node1:/u01/app/11gr2/grid/cfgtoollogs]$ chmod 600 cfgrsp.properties 
+[grid@node1:/u01/app/11gr2/grid/cfgtoollogs]$ ./configToolAllCommands RESPONSE_FILE=./cfgrsp.properties
+```
+执行完后检测GI状态：
+```
+[grid@node1:/u01/app/11gr2/grid/cfgtoollogs]$ olsnodes -s -t 
+node1   Active  Unpinned 
+node2   Active  Unpinned 
+[grid@node1:/u01/app/11gr2/grid/cfgtoollogs]$ crsctl stat res -t 
+-------------------------------------------------------------------------------- 
+NAME           TARGET  STATE        SERVER                   STATE_DETAILS        
+-------------------------------------------------------------------------------- 
+Local Resources 
+-------------------------------------------------------------------------------- 
+ora.CRS.dg 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.LISTENER.lsnr 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.asm 
+               ONLINE  ONLINE       node1                    Started              
+               ONLINE  ONLINE       node2                    Started              
+ora.gsd 
+               OFFLINE OFFLINE      node1                                         
+               OFFLINE OFFLINE      node2                                         
+ora.net1.network 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.ons 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.registry.acfs 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+-------------------------------------------------------------------------------- 
+Cluster Resources 
+-------------------------------------------------------------------------------- 
+ora.LISTENER_SCAN1.lsnr 
+      1        ONLINE  ONLINE       node1                                         
+ora.cvu 
+      1        ONLINE  ONLINE       node1                                         
+ora.node1.vip 
+      1        ONLINE  ONLINE       node1                                         
+ora.node2.vip 
+      1        ONLINE  ONLINE       node2                                         
+ora.oc4j 
+      1        ONLINE  ONLINE       node1                                         
+ora.scan1.vip 
+      1        ONLINE  ONLINE       node1
+```
+<h1>3.创建ASM磁盘组</h1>
+```
+#[grid@node1:/worktmp/11g/grid]$ asmca -silent -configureASM -sysAsmPassword Password123 \ 
+#-asmsnmpPassword Password123 -diskString '/dev/asm*' -diskGroupName DATA1 \ 
+#-disk '/dev/asm-diske' -redundancy EXTERNAL
+#Correct 
+asmca -silent -createDiskGroup -diskString '/dev/asm-disk*' \
+-diskGroupName DATA -disk '/dev/asm-diske' -redundancy EXTERNAL \
+-sysAsmPassword Password123 -compatible.asm 11.2 \
+-compatible.rdbms 11.2
+```
+检测安装结果： 
+```
+SQL> select name,type,state,total_mb,free_mb,COMPATIBILITY, DATABASE_COMPATIBILITY from gv$asm_diskgroup; 
+
+NAME	   TYPE   STATE 	TOTAL_MB    FREE_MB COMPATIBILITY   DATABASE_COMPAT
+---------- ------ ----------- ---------- ---------- --------------- ---------------
+CRS	   NORMAL MOUNTED	   24576      23650 11.2.0.0.0	    10.1.0.0.0
+DATA	   EXTERN MOUNTED	   30720      30625 11.2.0.0.0	    10.1.0.0.0
+CRS	   NORMAL MOUNTED	   24576      23650 11.2.0.0.0	    10.1.0.0.0
+DATA	   EXTERN MOUNTED	   30720      30625 11.2.0.0.0	    10.1.0.0.0
+```
+<h1>4.安装RDBMS软件</h1>
+安装前检测：
+```
+[grid@node1:/worktmp/11g/grid]$ ./runcluvfy.sh stage -pre dbinst -n node1,node2 -verbose
+```
+只安装软件，不创建DB，修改database下默认响应文件：
+```
+[oracle@node1:/home/oracle]$ cd /worktmp/11g/database/response/ 
+[oracle@node1:/worktmp/11g/database/response]$ cat db_install.rsp | grep -v ^# | grep -v ^$ > ~/db_install.rsp 
+[oracle@node1:/worktmp/11g/database/response]$ cat ~/db_install.rsp 
+oracle.install.responseFileVersion=/oracle/install/rspfmt_dbinstall_response_schema_v11_2_0 
+oracle.install.option=INSTALL_DB_SWONLY 
+ORACLE_HOSTNAME=node1 
+UNIX_GROUP_NAME=oinstall 
+INVENTORY_LOCATION=/u01/app/oraInvertory 
+SELECTED_LANGUAGES=en,zh_CN 
+ORACLE_HOME=/u01/app/oracle/product/11gr2 
+ORACLE_BASE=/u01/app/oracle 
+oracle.install.db.InstallEdition=EE 
+oracle.install.db.EEOptionsSelection=false 
+oracle.install.db.optionalComponents=oracle.rdbms.partitioning:11.2.0.4.0,oracle.oraolap:11.2.0.4.0, 
+oracle.rdbms.dm:11.2.0.4.0,oracle.rdbms.dv:11.2.0.4.0, 
+oracle.rdbms.lbac:11.2.0.4.0,oracle.rdbms.rat:11.2.0.4.0 
+oracle.install.db.DBA_GROUP=dba 
+oracle.install.db.OPER_GROUP= 
+oracle.install.db.CLUSTER_NODES=node1,node2 
+oracle.install.db.isRACOneInstall=false 
+oracle.install.db.racOneServiceName= 
+oracle.install.db.config.starterdb.type= 
+oracle.install.db.config.starterdb.globalDBName= 
+oracle.install.db.config.starterdb.SID= 
+oracle.install.db.config.starterdb.characterSet=AL32UTF8 
+oracle.install.db.config.starterdb.memoryOption=false 
+oracle.install.db.config.starterdb.memoryLimit= 
+oracle.install.db.config.starterdb.installExampleSchemas=false 
+oracle.install.db.config.starterdb.enableSecuritySettings=true 
+oracle.install.db.config.starterdb.password.ALL= 
+oracle.install.db.config.starterdb.password.SYS= 
+oracle.install.db.config.starterdb.password.SYSTEM= 
+oracle.install.db.config.starterdb.password.SYSMAN= 
+oracle.install.db.config.starterdb.password.DBSNMP= 
+oracle.install.db.config.starterdb.control=DB_CONTROL 
+oracle.install.db.config.starterdb.gridcontrol.gridControlServiceURL= 
+oracle.install.db.config.starterdb.automatedBackup.enable=false 
+oracle.install.db.config.starterdb.automatedBackup.osuid= 
+oracle.install.db.config.starterdb.automatedBackup.ospwd= 
+oracle.install.db.config.starterdb.storageType= 
+oracle.install.db.config.starterdb.fileSystemStorage.dataLocation= 
+oracle.install.db.config.starterdb.fileSystemStorage.recoveryLocation= 
+oracle.install.db.config.asm.diskGroup= 
+oracle.install.db.config.asm.ASMSNMPPassword= 
+MYORACLESUPPORT_USERNAME= 
+MYORACLESUPPORT_PASSWORD= 
+SECURITY_UPDATES_VIA_MYORACLESUPPORT=false 
+DECLINE_SECURITY_UPDATES=true 
+PROXY_HOST= 
+PROXY_PORT= 
+PROXY_USER= 
+PROXY_PWD= 
+PROXY_REALM= 
+COLLECTOR_SUPPORTHUB_URL= 
+oracle.installer.autoupdates.option=SKIP_UPDATES 
+oracle.installer.autoupdates.downloadUpdatesLoc= 
+AUTOUPDATES_MYORACLESUPPORT_USERNAME= 
+AUTOUPDATES_MYORACLESUPPORT_PASSWORD=
+```
+执行安装程序：
+```
+[oracle@node1:/worktmp/11g/database]$./runInstaller -silent \ 
+-responseFile /home/oracle/db_install.rsp \ 
+-ignorePrereq -ignoreSysPreReqs -ignoreDiskWarning
+```
+安装完成，执行脚本：
+```
+[root@node1:/root]# /u01/app/oracle/product/11gr2/root.sh 
+[root@node2:/root]# /u01/app/oracle/product/11gr2/root.sh 
+Performing root user operation for Oracle 11g 
+
+ The following environment variables are set as: 
+    ORACLE_OWNER= oracle 
+    ORACLE_HOME=  /u01/app/oracle/product/11gr2 
+   Copying dbhome to /usr/local/bin ... 
+   Copying oraenv to /usr/local/bin ... 
+   Copying coraenv to /usr/local/bin ... 
+
+ Entries will be added to the /etc/oratab file as needed by 
+Database Configuration Assistant when a database is created 
+Finished running generic part of root script. 
+Now product-specific root actions will be performed. 
+Finished product-specific root actions. 
+Finished product-specific root actions.
+```
+<h1>5.DBCA建库</h1>
+```
+[oracle@node1:/home/oracle]$ $ORACLE_HOME/bin/dbca -silent -createDatabase \ 
+-templateName General_Purpose.dbc -gdbName racdb -sid racdb \ 
+-sysPassword Password123 -systemPassword Password123 -recoveryAreaDestination FRA -storageType ASM \ 
+-diskGroupName DATA1 -datafileJarLocation $ORACLE_HOME/assistants/dbca/templates \ 
+-nodeinfo node1,node2 -characterset AL32UTF8 -obfuscatedPasswords false \ 
+-sampleSchema false -asmSysPassword Password123 
+Copying database files 
+1% complete 
+3% complete 
+9% complete 
+15% complete 
+21% complete 
+27% complete 
+30% complete 
+Creating and starting Oracle instance 
+32% complete 
+36% complete 
+40% complete 
+44% complete 
+45% complete 
+48% complete 
+50% complete 
+Creating cluster database views 
+52% complete 
+70% complete 
+Completing Database Creation 
+73% complete 
+76% complete 
+85% complete 
+94% complete 
+100% complete 
+Look at the log file "/u01/app/oracle/cfgtoollogs/dbca/racdb/racdb.log" for further details.
+```
+<p>利用Oracle提供的General_Purpose模版创建，也可以自己录制数据库模版，在dbca.rsp中添加自己的模版创建数据库，本文采用的是第一种方式。 
+利用自己的模版创建：<p>
+<p>a) 利用OUI图形界面创建create database的template。<p>
+<p>b) 选择custom database<p>
+<p>c) 其他按照需求自定义<p>
+<p>d) 最后一步取消create database选项，改为选择create template<p>
+<p>e) 创建后模版文件位置：$ORACLE_HOME/assistants/dbca/templates<p>
+<p>修改安装文件内response文件dbca.rsp，主要修改GDBNAME、SID及TEMPLATENAME三个选项。再使用以下命令安装：<p>
+<code>dbca -silent -createdatabase -responseFile ./dbca.rsp</code>
+<h1>6.完善安装</h1>
+修改归档模式： 
+```
+SQL> select inst_id,instance_name,version,archiver,status from gv$instance; 
+
+    INST_ID INSTANCE_NAME                    VERSION                            ARCHIVER       STATUS 
+---------- -------------------------------- ---------------------------------- -------------- ------------------------ 
+         1 racdb1                           11.2.0.4.0                         STOPPED        OPEN 
+         2 racdb2                           11.2.0.4.0                         STOPPED        OPEN 
+
+ SQL> alter system set log_archive_dest_1='location=+DATA1/arch/racdb1' sid='racdb1' scope=spfile; 
+
+ System altered. 
+
+ SQL> alter system set log_archive_dest_1='location=+DATA1/arch/racdb2' sid='racdb2' scope=spfile; 
+
+ System altered. 
+```
+```
+[grid@node2:/home/grid]$ srvctl stop database -d racdb -o immediate 
+[grid@node2:/home/grid]$ srvctl start database -d racdb -o mount
+```
+```
+SQL> alter database archivelog; 
+
+ Database altered. 
+
+ SQL> archive log list; 
+Database log mode              Archive Mode 
+Automatic archival             Enabled 
+Archive destination            +DATA1/arch/racdb1 
+Oldest online log sequence     4 
+Next log sequence to archive   5 
+Current log sequence           5 
+```
+```
+[grid@node2:/home/grid]$ srvctl stop database -d racdb -o immediate 
+[grid@node2:/home/grid]$ srvctl start database -d racdb -o open
+```
+```
+SQL> set linesize 200 
+SQL> select inst_id,instance_name,version,archiver,status from gv$instance; 
+
+    INST_ID INSTANCE_NAME                    VERSION                            ARCHIVER       STATUS 
+---------- -------------------------------- ---------------------------------- -------------- ------------------------ 
+         1 racdb1                           11.2.0.4.0                         STARTED        OPEN 
+         2 racdb2                           11.2.0.4.0                         STARTED        OPEN 
+```
+检查资源状况：
+```
+[root@node1:/root]# /u01/app/11gr2/grid/bin/crsctl stat res -t 
+-------------------------------------------------------------------------------- 
+NAME           TARGET  STATE        SERVER                   STATE_DETAILS        
+-------------------------------------------------------------------------------- 
+Local Resources 
+-------------------------------------------------------------------------------- 
+ora.CRS.dg 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.DATA1.dg 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.LISTENER.lsnr 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.asm 
+               ONLINE  ONLINE       node1                    Started              
+               ONLINE  ONLINE       node2                    Started              
+ora.gsd 
+               OFFLINE OFFLINE      node1                                         
+               OFFLINE OFFLINE      node2                                         
+ora.net1.network 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.ons 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+ora.registry.acfs 
+               ONLINE  ONLINE       node1                                         
+               ONLINE  ONLINE       node2                                         
+-------------------------------------------------------------------------------- 
+Cluster Resources 
+-------------------------------------------------------------------------------- 
+ora.LISTENER_SCAN1.lsnr 
+      1        ONLINE  ONLINE       node2                                         
+ora.cvu 
+      1        ONLINE  ONLINE       node2                                         
+ora.node1.vip 
+      1        ONLINE  ONLINE       node1                                         
+ora.node2.vip 
+      1        ONLINE  ONLINE       node2                                         
+ora.oc4j 
+      1        ONLINE  ONLINE       node2                                         
+ora.racdb.db 
+      1        ONLINE  ONLINE       node1                    Open                 
+      2        ONLINE  ONLINE       node2                    Open                 
+ora.scan1.vip 
+      1        ONLINE  ONLINE       node2                                        
+```
+Reference：<br />
+<b>Oracle® Real Application Clusters Installation Guide 11<i>g</i> Release 2 (11.2) for Linux and UNIX</b><br />
+<b>Oracle® Grid Infrastructure Installation Guide 11<i>g</i> Release 2 (11.2) for Linux</b> 
+</br>
+ <b>EOF</b> 

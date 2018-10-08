@@ -1,0 +1,445 @@
+---
+layout: post
+title: Clustering Factor聚簇因子
+categories:
+- oracle
+tags:
+- tuning
+published: true
+comments: false
+date: 2013-06-25
+---
+聚簇因子记录了当扫描索引时所读取数据块的数量。普通表即堆表，数据存放在磁盘都是无序的，
+<!--more-->
+因此，根据索引查找的数据有可能在同一个块里，有可能在不同块里，聚簇因子正是衡量这个的标准。由上述可知，聚簇因子越小，表示一个表的数据越聚簇，即查询表的操作时候，扫描数据块的数量比较少。如果聚簇因子很高，很明显，相应的IO操作就要多。 
+如果聚簇因子接近于这个表的存储数据块数量，那么，这张表是按照索引字段的顺序存储的。如果聚簇因子接近于这个表的行数，那说明这张表不是按索引字段顺序存储的。 
+<li>1）如果越有序，即相邻的键值存储在相同的block，那么这时候Clustering Factor 的值就越低</li>
+<li>2）如果不是很有序，即键值是随机的存储在block上，这样在读取键值时，可能就需要一次又一次的去访问相同的block，从而增加了I/O</li>
+聚簇因子的计算方法如下： 
+<li>1） 索引扫描</li>
+<li>2） 比较某行的rowid和前一行的rowid，如果这两个rowid不属于同一个数据块，那么cluster factor增加</li>
+<li>3） 整个索引扫描完毕后，就得到了该索引的cluster factor</li>
+从USER_INDEXES视图可以查看Clustering Factor的大小： 
+```
+SELECT   a.table_name, 
+         a.index_name, 
+         a.CLUSTERING_FACTOR, 
+         a.distinct_keys / a.num_rows selectivity, 
+         b.blocks 
+  FROM   user_indexes a, user_tables b 
+WHERE   a.num_rows > 0 AND a.table_name = b.table_name
+```
+示例： 
+1. 创建空表 
+```
+CREATE TABLE obj 
+AS 
+   SELECT   * 
+     FROM   dba_objects 
+WHERE   1 = 2;
+```
+2. 无序插入数据使得数据不均匀分布 
+```
+BEGIN 
+   FOR i IN 1 .. 10 
+   LOOP 
+               INSERT                                              /*+append*/ 
+                     INTO    obj 
+           SELECT   * 
+             FROM   dba_objects 
+         ORDER BY   i; 
+      COMMIT; 
+   END LOOP; 
+END; 
+/
+SQL> select count(*) from obj; 
+  COUNT(*) 
+---------- 
+501320 
+--查看表大小 
+set wrap off 
+col owner for a10 
+col segment_name for a15 
+SELECT   owner, 
+         segment_name, 
+         blocks, 
+         extents, 
+         bytes / 1024 / 1024 || 'M' "size" 
+  FROM   dba_segments 
+ WHERE   owner = 'FUNG' AND segment_name = 'OBJ'; 
+OWNER      SEGMENT_NAME        BLOCKS    EXTENTS size 
+---------- --------------- ---------- ----------------- 
+FUNG       OBJ                   7040         70 55M
+```
+3. 创建索引 
+```
+create index obj_id_idx on fung.obj(object_id); 
+--查看索引大小 
+SELECT   owner, 
+         segment_name, 
+         blocks, 
+         extents, 
+         bytes / 1024 / 1024 || 'M' "size" 
+  FROM   dba_segments 
+ WHERE   owner = 'FUNG' AND segment_name = upper('obj_id_idx'); 
+OWNER      SEGMENT_NAME        BLOCKS    EXTENTS size 
+---------- --------------- ---------- ------------ 
+FUNG       OBJ_ID_IDX            1152         24   9M
+```
+4. 收集统计信息 
+```
+--未收集统计前聚簇因子 
+SELECT   owner, 
+         index_name, 
+         clustering_factor, 
+         num_rows 
+  FROM   dba_indexes 
+ WHERE   owner = 'FUNG' AND index_name = UPPER ('obj_id_idx'); 
+OWNER      INDEX_NAME                     CLUSTERING_FACTOR   NUM_ROWS 
+---------- ------------------------------ ----------------- ---------- 
+FUNG       OBJ_ID_IDX                                501310     501310 
+--收集统计信息 
+exec dbms_stats.gather_table_stats('FUNG','OBJ',cascade => true); 
+--再次查看Inex Clustering Factor 
+SELECT   owner, 
+         index_name, 
+         clustering_factor, 
+         num_rows 
+  FROM   dba_indexes 
+ WHERE   owner = 'FUNG' AND index_name = UPPER ('obj_id_idx'); 
+OWNER      INDEX_NAME                     CLUSTERING_FACTOR   NUM_ROWS 
+---------- ------------------------------ ----------------- ---------- 
+FUNG       OBJ_ID_IDX                                501310     501310
+```
+收集统计信息前后聚簇因子并没有变化，表示在创建索引的时候，会收集表中数据真正的行数。并且聚簇因子等于行数，表示表的聚簇因子是无序的。 
+5. 查询一个确定值的执行计划 
+```
+SQL> set autot on exp stat 
+SQL> select * from obj where  object_id=1501; 
+Execution Plan 
+---------------------------------------------------------- 
+Plan hash value: 1410530163 
+
+ ------------------------------------------------------------------------------------------ 
+| Id  | Operation                   | Name       | Rows  | Bytes | Cost (%CPU)| Time     | 
+------------------------------------------------------------------------------------------ 
+|   0 | SELECT STATEMENT            |            |    10 |   930 |    14   (0)| 00:00:01 | 
+|   1 |  TABLE ACCESS BY INDEX ROWID| OBJ        |    10 |   930 |    14   (0)| 00:00:01 | 
+|*  2 |   INDEX RANGE SCAN          | OBJ_ID_IDX |    10 |       |     3   (0)| 00:00:01 | 
+------------------------------------------------------------------------------------------ 
+
+ Predicate Information (identified by operation id): 
+--------------------------------------------------- 
+
+    2 - access("OBJECT_ID"=1501) 
+
+ Statistics 
+---------------------------------------------------------- 
+          1  recursive calls 
+          0  db block gets 
+         19  consistent gets 
+          0  physical reads 
+        404  redo size 
+       1509  bytes sent via SQL*Net to client 
+        492  bytes received via SQL*Net from client 
+          2  SQL*Net roundtrips to/from client 
+          0  sorts (memory) 
+          0  sorts (disk) 
+         10  rows processed
+```
+<div><span lang="EN-US">       </span><span>由执行计划可以看出，这个语句是走了索引的，</span><span lang="EN-US">cost</span><span>值为</span><span lang="EN-US">13</span><span>。</span></div>
+<div>
+<div><!--[if !supportLists]--><span><span lang="EN-US">6.<span>       </span></span><!--[endif]--><span>查询一个范围值的执行计划</span></span></div>
+<div></div>
+```
+SQL> select * from obj where object_id>1000 and object_id<2000; 
+Execution Plan 
+---------------------------------------------------------- 
+Plan hash value: 730912574</div> 
+
+ -------------------------------------------------------------------------- 
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     | 
+-------------------------------------------------------------------------- 
+|   0 | SELECT STATEMENT  |      |  8400 |   762K|  1576   (1)| 00:00:19 | 
+|*  1 |  TABLE ACCESS FULL| OBJ  |  8400 |   762K|  1576   (1)| 00:00:19 | 
+-------------------------------------------------------------------------- 
+
+ Predicate Information (identified by operation id): 
+--------------------------------------------------- 
+
+    1 - filter("OBJECT_ID"1000) 
+
+ Statistics 
+---------------------------------------------------------- 
+          1  recursive calls 
+          0  db block gets 
+       7693  consistent gets 
+          0  physical reads 
+        404  redo size 
+     523611  bytes sent via SQL*Net to client 
+       7807  bytes received via SQL*Net from client 
+        667  SQL*Net roundtrips to/from client 
+          0  sorts (memory) 
+          0  sorts (disk) 
+       9990  rows processed
+```
+<div>
+<div><span><span><span lang="EN-US">       </span><span>全表扫描，</span><span lang="EN-US">cost</span><span>为</span><span lang="EN-US">1576.</span></span></span></div>
+<div></div>
+<div><!--[if !supportLists]--><span><span><span lang="EN-US">7.<span>       </span></span><!--[endif]--><span>刷新缓冲池，查看物理读跟执行计划</span></span></span></div>
+</div>
+
+```
+FUNG@linora>alter system flush buffer_cache; 
+FUNG@linora>select * from obj where object_id>1000 and object_id<2000; 
+Execution Plan 
+---------------------------------------------------------- 
+Plan hash value: 730912574 
+
+ -------------------------------------------------------------------------- 
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     | 
+-------------------------------------------------------------------------- 
+|   0 | SELECT STATEMENT  |      |  8400 |   762K|  1576   (1)| 00:00:19 | 
+|*  1 |  TABLE ACCESS FULL| OBJ  |  8400 |   762K|  1576   (1)| 00:00:19 | 
+-------------------------------------------------------------------------- 
+
+ Predicate Information (identified by operation id): 
+--------------------------------------------------- 
+
+    1 - filter("OBJECT_ID"1000) 
+
+ Statistics 
+---------------------------------------------------------- 
+          0  recursive calls 
+          0  db block gets 
+       7698  consistent gets 
+       7025  physical reads 
+        764  redo size 
+     523611  bytes sent via SQL*Net to client 
+       7807  bytes received via SQL*Net from client 
+        667  SQL*Net roundtrips to/from client 
+          0  sorts (memory) 
+          0  sorts (disk) 
+       9990  rows processed
+```
+<div><span lang="EN-US">       </span><span>产生了</span><span lang="EN-US">7025</span><span>个物理读。</span>
+<div><!--[if !supportLists]--><span><span lang="EN-US">8.<span>       </span></span><!--[endif]--><span>强制索引，查看执行计划</span></span></div>
+</div>
+```
+FUNG@linora>select /*+ index(obj obj_id_idx) */ * from obj where object_id>1000 and object_id<2000; 
+Execution Plan 
+---------------------------------------------------------- 
+Plan hash value: 1410530163 
+
+ ------------------------------------------------------------------------------------------ 
+| Id  | Operation                   | Name       | Rows  | Bytes | Cost (%CPU)| Time     | 
+------------------------------------------------------------------------------------------ 
+|   0 | SELECT STATEMENT            |            |  8400 |   762K|  8426   (1)| 00:01:42 | 
+|   1 |  TABLE ACCESS BY INDEX ROWID| OBJ        |  8400 |   762K|  8426   (1)| 00:01:42 | 
+|*  2 |   INDEX RANGE SCAN          | OBJ_ID_IDX |  8400 |       |    21   (0)| 00:00:01 | 
+------------------------------------------------------------------------------------------ 
+
+ Predicate Information (identified by operation id): 
+--------------------------------------------------- 
+
+    2 - access("OBJECT_ID">1000 AND "OBJECT_ID"<2000) 
+
+ Statistics 
+---------------------------------------------------------- 
+          1  recursive calls 
+          0  db block gets 
+      10796  consistent gets 
+         40  physical reads 
+       8468  redo size 
+     217089  bytes sent via SQL*Net to client 
+       7807  bytes received via SQL*Net from client 
+        667  SQL*Net roundtrips to/from client 
+          0  sorts (memory) 
+          0  sorts (disk) 
+       9990  rows processed
+```
+<div><span lang="EN-US">       </span><span>强制索引后，使用了</span><span lang="EN-US">index range scan</span><span>，</span><span lang="EN-US">cost</span><span>由原来的</span><span lang="EN-US">1546</span><span>变成了</span><span lang="EN-US">8615</span><span>，即说明</span><span lang="EN-US">Oracle</span><span>认为全表扫描还更为好。</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">9.<span>       </span></span><!--[endif]--><span>查看强制索引的物理读</span></div>
+<div></div>
+```
+FUNG@linora>alter system flush buffer_cache; 
+select /*+ index(obj obj_id_idx) */ * from obj where object_id>1000 and object_id<2000 
+Execution Plan 
+---------------------------------------------------------- 
+Plan hash value: 1410530163 
+
+ ------------------------------------------------------------------------------------------ 
+| Id  | Operation                   | Name       | Rows  | Bytes | Cost (%CPU)| Time     | 
+------------------------------------------------------------------------------------------ 
+|   0 | SELECT STATEMENT            |            |  8400 |   762K|  8426   (1)| 00:01:42 | 
+|   1 |  TABLE ACCESS BY INDEX ROWID| OBJ        |  8400 |   762K|  8426   (1)| 00:01:42 | 
+|*  2 |   INDEX RANGE SCAN          | OBJ_ID_IDX |  8400 |       |    21   (0)| 00:00:01 | 
+------------------------------------------------------------------------------------------ 
+
+ Predicate Information (identified by operation id): 
+--------------------------------------------------- 
+
+    2 - access("OBJECT_ID">1000 AND "OBJECT_ID"<2000) 
+
+ Statistics 
+---------------------------------------------------------- 
+          0  recursive calls 
+          0  db block gets 
+      10680  consistent gets 
+        257  physical reads 
+        116  redo size 
+     217089  bytes sent via SQL*Net to client 
+       7807  bytes received via SQL*Net from client 
+        667  SQL*Net roundtrips to/from client 
+          0  sorts (memory) 
+          0  sorts (disk) 
+       9990  rows processed
+```
+<div><span lang="EN-US">    </span><span>这里的物理读要比全表扫描低很多，但为什么默认的执行计划</span><span lang="EN-US">Oracle</span><span>却不选择走索引呢？因为</span><span lang="EN-US">Oracle</span><span>认为走索引的</span><span lang="EN-US">cost</span><span>会比全表扫描要大。而</span><span lang="EN-US">CBO</span><span>就是基于</span><span lang="EN-US">cost</span><span>来决定执行计划的。</span></div>
+<div><span lang="EN-US">       </span><span>对于索引的</span><span lang="EN-US">Cost</span><span>，</span><span lang="EN-US">Oracle </span><span>是根据</span><span lang="EN-US">Clustering Factor</span><span>参数来计算的，而我们的数据</span><span lang="EN-US">Clustering Factor</span><span>参数很高，数据存储无序。</span> <span>这就造成了</span><span lang="EN-US">Oracle </span><span>认为走索引的</span><span lang="EN-US">cost </span><span>比全表扫描大。</span>
+<div><!--[if !supportLists]--><span><span lang="EN-US">10.<span>       </span></span><!--[endif]--><span>降低聚簇因子</span></span></div>
+</div>
+```
+FUNG@linora>truncate table obj; 
+Table truncated. 
+FUNG@linora>insert /*+append */ into obj select * from obj1; 
+510370 rows created. 
+FUNG@linora>commit; 
+Commit complete.
+```
+<div><!--[if !supportLists]--><span lang="EN-US">11.<span>       </span></span><!--[endif]--><span>查看表及索引信息</span></div>
+<div></div>
+```
+--obj表 
+SELECT   owner, 
+         segment_name, 
+         blocks, 
+         extents, 
+         bytes / 1024 / 1024 || 'M' "size" 
+  FROM   dba_segments 
+ WHERE   owner = 'FUNG' AND segment_name = 'OBJ'; 
+OWNER      SEGMENT_NAME        BLOCKS    EXTENTS size 
+---------- --------------- ---------- ---------- ----- 
+FUNG       OBJ                   7040         70 55M 
+--索引信息 
+SELECT   owner, 
+         segment_name, 
+         segment_type, 
+         blocks, 
+         extents, 
+         bytes / 1024 / 1024 || 'M' "SIZE" 
+  FROM   dba_segments 
+ WHERE   owner = 'FUNG' AND segment_name = UPPER ('obj_id_idx'); 
+OWNER      SEGMENT_NAME    SEGMENT_TYPE           BLOCKS    EXTENTS SIZE 
+---------- --------------- ---------------------- ---------- -----  
+FUNG       OBJ_ID_IDX      INDEX                1024         23 8M 
+--索引聚餐因子 
+SELECT   owner, 
+         index_name, 
+         clustering_factor, 
+         num_rows 
+  FROM   dba_indexes 
+ WHERE   owner = 'FUNG' AND index_name = 'OBJ_ID_IDX'; 
+OWNER      INDEX_NAME                     CLUSTERING_FACTOR   NUM_ROWS 
+---------- ------------------------------ ----------------- ---------- 
+FUNG       OBJ_ID_IDX                                501310     501310 
+--重建索引 
+SQL> alter index obj_id_idx rebuild; 
+--再次查看聚簇因子 
+SELECT   owner, 
+         index_name, 
+         clustering_factor, 
+         num_rows 
+  FROM   dba_indexes 
+ WHERE   owner = 'FUNG' AND index_name = 'OBJ_ID_IDX'; 
+OWNER      INDEX_NAME CLUSTERING_FACTOR   NUM_ROWS 
+---------- ---------- ----------------- ---------- 
+FUNG       OBJ_ID_IDX              7009     510310 
+--聚簇因子已经降为6883了。接着对表进行统计，然后与表的block再比较一次： 
+exec dbms_stats.gather_table_stats('FUNG','OBJ',cascade => true); 
+
+ FUNG@linora>select blocks from user_tables where table_name='OBJ'; 
+
+     BLOCKS 
+---------- 
+      7129
+```
+<div><span lang="EN-US">       </span><span>聚簇因子为</span><span lang="EN-US">7129</span><span>，而表的</span><span lang="EN-US">block</span><span>为</span><span lang="EN-US">7040</span><span>，已经很接近了，说明相邻的行是存储在同一个数据块中的。</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">12.<span>       </span></span><!--[endif]--><span>再查看之前的执行计划</span></div>
+```
+FUNG@linora>select * from obj where object_id>1000 and object_id<2000 
+Execution Plan 
+---------------------------------------------------------- 
+Plan hash value: 1410530163 
+
+ ------------------------------------------------------------------------------------------ 
+| Id  | Operation                   | Name       | Rows  | Bytes | Cost (%CPU)| Time     | 
+------------------------------------------------------------------------------------------ 
+|   0 | SELECT STATEMENT            |            |  8374 |   760K|   137   (0)| 00:00:02 | 
+|   1 |  TABLE ACCESS BY INDEX ROWID| OBJ        |  8374 |   760K|   137   (0)| 00:00:02 | 
+|*  2 |   INDEX RANGE SCAN          | OBJ_ID_IDX |  8374 |       |    21   (0)| 00:00:01 | 
+------------------------------------------------------------------------------------------ 
+
+ Predicate Information (identified by operation id): 
+--------------------------------------------------- 
+
+    2 - access("OBJECT_ID">1000 AND "OBJECT_ID"<2000) 
+
+ Statistics 
+---------------------------------------------------------- 
+          1  recursive calls 
+          0  db block gets 
+       1468  consistent gets 
+          0  physical reads 
+        116  redo size 
+     217089  bytes sent via SQL*Net to client 
+       7807  bytes received via SQL*Net from client 
+        667  SQL*Net roundtrips to/from client 
+          0  sorts (memory) 
+          0  sorts (disk) 
+       9990  rows processed
+```
+<div><span lang="EN-US">       </span><span>很明显，已经走索引了，且</span><span lang="EN-US">cost</span><span>值也从</span><span lang="EN-US">1546</span><span>降低到</span><span lang="EN-US">137</span><span>。</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">13.<span>       </span></span><!--[endif]--><span>再看看物理读</span></div>
+```
+FUNG@linora>alter system flush  buffer_cache; 
+
+System altered. 
+FUNG@linora>select * from obj where object_id>1000 and object_id<2000; 
+Execution Plan 
+---------------------------------------------------------- 
+Plan hash value: 1410530163 
+
+ ------------------------------------------------------------------------------------------ 
+| Id  | Operation                   | Name       | Rows  | Bytes | Cost (%CPU)| Time     | 
+------------------------------------------------------------------------------------------ 
+|   0 | SELECT STATEMENT            |            |  8374 |   760K|   137   (0)| 00:00:02 | 
+|   1 |  TABLE ACCESS BY INDEX ROWID| OBJ        |  8374 |   760K|   137   (0)| 00:00:02 | 
+|*  2 |   INDEX RANGE SCAN          | OBJ_ID_IDX |  8374 |       |    21   (0)| 00:00:01 | 
+------------------------------------------------------------------------------------------ 
+
+ Predicate Information (identified by operation id): 
+--------------------------------------------------- 
+
+    2 - access("OBJECT_ID">1000 AND "OBJECT_ID"<2000) 
+
+ Statistics 
+---------------------------------------------------------- 
+          0  recursive calls 
+          0  db block gets 
+       1467  consistent gets 
+        176  physical reads 
+          0  redo size 
+     217089  bytes sent via SQL*Net to client 
+       7807  bytes received via SQL*Net from client 
+        667  SQL*Net roundtrips to/from client 
+          0  sorts (memory) 
+          0  sorts (disk) 
+       9990  rows processed
+```
+<div>
+<div><span lang="EN-US">       </span><span>物理读也降低到了</span>176<span>，性能的提升还是挺大的。</span></div>
+<div><span lang="EN-US">      </span><span>通过以上说明和测试，可以看到</span><span lang="EN-US">Clustering Factor </span><span>也是索引健康的一个重要判断的标准。</span> <span>其值越低越好。</span><span lang="EN-US"> </span><span>它会影响</span><span lang="EN-US">CBO </span><span>选择正确的执行计划。但是要注意一点，</span><span lang="EN-US">Clustering Factor </span><span>总是趋势与不断恶化的。</span></div>
+</div>
+ 
+EOF 

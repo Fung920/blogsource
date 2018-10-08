@@ -1,0 +1,346 @@
+---
+layout: post
+title: 11gr2 RAC增加节点
+categories:
+- oracle
+tags:
+- rac
+published: true
+comments: false
+date: 2013-09-06
+---
+     RAC的扩展分两个层次：Clusterware及Oracle数据库。在对RAC进行增加节点时候，需要分别对Clusterware及数据库进行扩展，其实就跟安装步骤差不多。也需要分grid及oracle用户完成。 
+<!--more-->
+     <p>在安装RAC的时候，可以现在一个节点上安装GI及Oracle软件，并且创建数据库，由这个节点构成单一节点的RAC集群，然后再根据对集群进行扩展，本文将以此种方式演示11gr2 RAC添加节点。</p>
+<h1>1.       扩展前准备</h1>
+<ul>
+	<li>操作系统设置</li>
+</ul>
+    OS版本必须相同，检查内核参数，系统内存、CPU、文件系统大小、swap空间等。
+<ul>
+	<li>创建必要的用户及组</li>
+</ul>
+    用户及用户组UID及GID必须跟其他节点相同，同时对这些用户环境变量进行设置。
+<ul>
+	<li>网络配置</li>
+</ul>
+    网络规划，Public及private网络名称必须相同。
+<ul>
+	<li>共享存储配置</li>
+</ul>
+    对于共享存储，必须保证在新的节点上是可以访问的，而且对软件安装者必须有读写权限。
+<ul>
+	<li>创建相关目录</li>
+</ul>
+    这些目录用户存放GI及Oracle数据库软件，同时要保证用户组及用户对这些目录的权限。
+<ul>
+	<li>配置RAC等效性</li>
+	<li>时间同步设置(CTSS )</li>
+</ul>
+<h1>2.       扩展Clusterware</h1>
+    <p>首先在正常运行的节点对新增加的节点进行验证，包括ssh等效性、rpm包等。</p>
+    以grid用户进入GI软件安装目录，执行以下命令：
+```
+[grid@orcl1:/home/grid/.ssh]$ cd /u01/app/11.2.0/grid/bin/ 
+[grid@orcl1:/u01/app/11.2.0/grid/bin]$  ./cluvfy stage -pre nodeadd -n orcl2 -fixup –verbose
+```
+接着进入GI安装目录的oui/bin子目录，执行以下命令将新节点node2加入集群中：
+```
+[grid@orcl1:/u01/app/11.2.0/grid/bin]$ cd ../oui/bin/ 
+[grid@orcl1:/u01/app/11.2.0/grid/oui/bin]$ export IGNORE_PREADDNODE_CHECKS=Y
+```
+以上变量是因为在之前已经检测过节点2，因此忽略执行addNode.sh时候忽略检测。
+```
+[grid@orcl1:/u01/app/11.2.0/grid/oui/bin]$ ./addNode.sh -silent \ 
+"CLUSTER_NEW_NODES={orcl2}" "CLUSTER_NEW_VIRTUAL_HOSTNAMES={racdb2-vip}" \ 
+"CLUSTER_NEW_PRIVATE_NODE_NAMES={racdb2-priv}" &>~/add_node.log
+```
+执行完之后需要<b>以</b><b>root</b><b>用户在新加节点上</b>执行两个脚本。请勿无视结果输出。 
+输出结果如下：
+```
+[root@orcl1:/worktmp]# cat /home/grid/add_node.log 
+Starting Oracle Universal Installer... 
+Checking swap space: must be greater than 500 MB.   Actual 3694 MB    Passed 
+Oracle Universal Installer, Version 11.2.0.4.0 Production 
+Copyright (C) 1999, 2013, Oracle. All rights reserved. 
+Performing tests to see whether nodes orcl2 are available 
+............................................................... 100% Done. 
+.
+----------------------------------------------------------------------------- 
+Cluster Node Addition Summary 
+Global Settings 
+Source: /u01/app/11.2.0/grid 
+New Nodes 
+Space Requirements 
+New Nodes 
+orcl2 
+/: Required 4.43GB : Available 17.14GB 
+Installed Products
+
+ Product Names 
+Oracle Grid Infrastructure 11g 11.2.0.4.0 
+……………….. 
+Oracle Database 11g 11.2.0.4.0 
+----------------------------------------------------------------------------- 
+
+ Instantiating scripts for add node (Friday, September 6, 2013 2:19:09 PM CST) 
+
+ .                                                                 1% Done. 
+
+ Instantiation of add node scripts complete 
+Copying to remote nodes (Friday, September 6, 2013 2:19:12 PM CST) 
+...............................................................................................                                 96% Done. 
+Home copied to new nodes 
+Saving inventory on nodes (Friday, September 6, 2013 2:37:27 PM CST) 
+
+ .                                                               100% Done. 
+Save inventory complete 
+
+ WARNING:A new inventory has been created on one or more nodes in this session. However, it has not yet been registered as the central inventory of this system. 
+To register the new inventory please run the script at '/u01/app/oraInventory/orainstRoot.sh' with root privileges on nodes 'orcl2'. 
+If you do not register the inventory, you may not be able to update or patch the products you installed. 
+The following configuration scripts need to be executed as the "root" user in each new cluster node. Each script in the list below is followed by a list of nodes. 
+/u01/app/oraInventory/orainstRoot.sh #On nodes orcl2 
+/u01/app/11.2.0/grid/root.sh #On nodes orcl2 
+To execute the configuration scripts: 
+1. Open a terminal window 
+2. Log in as "root" 
+3. Run the scripts in each cluster node 
+The Cluster Node Addition of /u01/app/11.2.0/grid was successful. 
+Please check '/tmp/silentInstall.log' for more details.
+```
+执行结果： 
+
+```
+[root@orcl2:/root]# /u01/app/oraInventory/orainstRoot.sh 
+Creating the Oracle inventory pointer file (/etc/oraInst.loc) 
+Changing permissions of /u01/app/oraInventory. 
+Adding read,write permissions for group. 
+Removing read,write,execute permissions for world. 
+Changing groupname of /u01/app/oraInventory to oinstall. 
+The execution of the script is complete.
+
+ [root@orcl2:/root]# /u01/app/11.2.0/grid/root.sh 
+Performing root user operation for Oracle 11g 
+The following environment variables are set as: 
+ORACLE_OWNER= grid 
+ORACLE_HOME=  /u01/app/11.2.0/grid 
+Enter the full pathname of the local bin directory: [/usr/local/bin]: 
+Copying dbhome to /usr/local/bin ... 
+Copying oraenv to /usr/local/bin ... 
+Copying coraenv to /usr/local/bin ... 
+Creating /etc/oratab file... 
+Entries will be added to the /etc/oratab file as needed by 
+Database Configuration Assistant when a database is created 
+Finished running generic part of root script. 
+Now product-specific root actions will be performed. 
+Using configuration parameter file: /u01/app/11.2.0/grid/crs/install/crsconfig_params 
+Creating trace directory 
+User ignored Prerequisites during installation 
+Installing Trace File Analyzer 
+OLR initialization - successful 
+Adding Clusterware entries to inittab 
+CRS-4402: The CSS daemon was started in exclusive mode but found an active CSS daemon on node orcl1, number 1, and is terminating 
+An active cluster was found during exclusive startup, restarting to join the cluster 
+clscfg: EXISTING configuration version 5 detected. 
+clscfg: version 5 is 11g Release 2. 
+Successfully accumulated necessary OCR keys. 
+Creating OCR keys for user 'root', privgrp 'root'.. 
+Operation successful. 
+Preparing packages for installation... 
+cvuqdisk-1.0.9-1 
+Configure Oracle Grid Infrastructure for a Cluster ... succeeded 
+```
+ 如果root.sh执行失败，执行以下脚本，fixup完再重新实现root.sh:
+<pre>
+[root@orcl2:/u01/app/11.2.0/grid/crs/install]# ./rootcrs.pl -deconfig -force
+</pre>
+
+ 在此节点重启CRS：
+```
+[root@orcl2:/root]# /u01/app/11.2.0/grid/bin/crsctl stop crs 
+[root@orcl2:/root]# /u01/app/11.2.0/grid/bin/crsctl start crs
+```
+
+ 最后，在新加节点上用grid用户通过以下命令对RAC扩展结果进行验证：
+<pre>
+[grid@orcl2:/u01/app/11.2.0/grid]$ cluvfy stage -post nodeadd -n orcl1,orcl2
+</pre> 
+
+ <h1>3.       扩展Oracle数据库服务器</h1>
+Oracle数据库服务器的扩展包括两部：第一步复制Oracle数据库软件；第二步在新节点上创建数据库实例及数据库监听。
+<h2>3.1复制软件</h2>
+以Oracle用户登录node1,执行以下命令将数据库软件复制到新添加节点上。
+```
+[root@orcl1:/root]# su - oracle 
+[oracle@orcl1:/home/oracle]$ cd $ORACLE_HOME/oui/bin 
+[oracle@orcl1:/u01/app/oracle/product/11gr2/oui/bin]$ 
+[oracle@orcl1:/u01/app/oracle/product/11gr2/oui/bin]$ ./addNode.sh -silent "CLUSTER_NEW_NODES={orcl2}" 
+Performing pre-checks for node addition 
+Checking node reachability... 
+Node reachability check passed from node "orcl1"
+
+ Checking user equivalence... 
+User equivalence check passed for user "oracle" 
+WARNING: 
+Node "orcl2" already appears to be part of cluster 
+Pre-check for node addition was successful. 
+Starting Oracle Universal Installer... 
+
+ Checking swap space: must be greater than 500 MB.   Actual 3739 MB    Passed 
+Oracle Universal Installer, Version 11.2.0.4.0 Production 
+Copyright (C) 1999, 2013, Oracle. All rights reserved. 
+
+ Performing tests to see whether nodes orcl2 are available 
+............................................................... 100% Done. 
+.. 
+----------------------------------------------------------------------------- 
+Cluster Node Addition Summary 
+Global Settings 
+Source: /u01/app/oracle/product/11gr2 
+New Nodes 
+Space Requirements 
+New Nodes 
+orcl2 
+/: Required 4.29GB : Available 13.18GB 
+Installed Products 
+Product Names 
+Oracle Database 11g 11.2.0.4.0 
+……… 
+Oracle Partitioning 11.2.0.4.0 
+
+ Enterprise Edition Options 11.2.0.4.0 
+----------------------------------------------------------------------------- 
+Instantiating scripts for add node (Friday, September 6, 2013 3:12:01 PM CST) 
+
+ .                                                                 1% Done. 
+Instantiation of add node scripts complete 
+Copying to remote nodes (Friday, September 6, 2013 3:12:07 PM CST) 
+...............................................................................................                                 96% Done. 
+Home copied to new nodes 
+
+ Saving inventory on nodes (Friday, September 6, 2013 3:36:48 PM CST) 
+.                                                               100% Done. 
+Save inventory complete 
+WARNING: 
+The following configuration scripts need to be executed as the "root" user in each new cluster node. Each script in the list below is followed by a list of nodes. 
+/u01/app/oracle/product/11gr2/root.sh #On nodes orcl2 
+To execute the configuration scripts: 
+1. Open a terminal window 
+2. Log in as "root" 
+3. Run the scripts in each cluster node 
+The Cluster Node Addition of /u01/app/oracle/product/11gr2 was successful. 
+Please check '/tmp/silentInstall.log' for more details. 
+```
+ 在节点2以root用户执行以上脚本：
+<pre>
+[root@orcl2:/worktmp]# /u01/app/oracle/product/11gr2/root.sh
+</pre>
+<h2>3.2创建数据库实例</h2>
+在node1上以Oracle用户登录，使用dbca silent模式创建数据库实例：
+```
+[oracle@orcl1:/u01]$ dbca -silent -addInstance -nodeList orcl2 -gdbName racdb \ 
+-instanceName racdb2 -sysDBAUserName sys -sysDBAPassword oracle
+
+ Adding instance 
+1% complete 
+2% complete 
+6% complete 
+13% complete 
+20% complete 
+26% complete 
+33% complete 
+40% complete 
+46% complete 
+53% complete 
+66% complete 
+Completing instance management. 
+76% complete 
+100% complete 
+Look at the log file "/u01/app/oracle/cfgtoollogs/dbca/racdb/racdb.log" for further details.
+```
+节点添加完毕，验证下： 
+
+```
+[root@orcl2:/root]# /u01/app/11.2.0/grid/bin/crsctl stat res -t  
+-------------------------------------------------------------------------------- 
+NAME           TARGET  STATE        SERVER                   STATE_DETAILS        
+-------------------------------------------------------------------------------- 
+Local Resources 
+-------------------------------------------------------------------------------- 
+ora.CRS.dg 
+               ONLINE  ONLINE       orcl1                                         
+               ONLINE  ONLINE       orcl2                                         
+ora.DATA.dg 
+               ONLINE  ONLINE       orcl1                                         
+               ONLINE  ONLINE       orcl2                                         
+ora.LISTENER.lsnr 
+               ONLINE  ONLINE       orcl1                                         
+               ONLINE  ONLINE       orcl2                                         
+ora.asm 
+               ONLINE  ONLINE       orcl1                    Started              
+               ONLINE  ONLINE       orcl2                    Started              
+ora.gsd 
+               OFFLINE OFFLINE      orcl1                                         
+               OFFLINE OFFLINE      orcl2                                         
+ora.net1.network 
+               ONLINE  ONLINE       orcl1                                         
+               ONLINE  ONLINE       orcl2                                         
+ora.ons 
+               ONLINE  ONLINE       orcl1                                         
+               ONLINE  ONLINE       orcl2                                         
+ora.registry.acfs 
+               ONLINE  ONLINE       orcl1                                         
+               ONLINE  ONLINE       orcl2                                         
+-------------------------------------------------------------------------------- 
+Cluster Resources 
+-------------------------------------------------------------------------------- 
+ora.LISTENER_SCAN1.lsnr 
+      1        ONLINE  ONLINE       orcl1                                         
+ora.cvu 
+      1        ONLINE  ONLINE       orcl2                                         
+ora.oc4j 
+      1        ONLINE  ONLINE       orcl1                                         
+ora.orcl1.vip 
+      1        ONLINE  ONLINE       orcl1                                         
+ora.orcl2.vip 
+      1        ONLINE  ONLINE       orcl2                                         
+ora.racdb.db 
+      1        ONLINE  ONLINE       orcl1                    Open                 
+      2        ONLINE  ONLINE       orcl2                    Open                 
+ora.scan1.vip 
+      1        ONLINE  ONLINE       orcl1                                        
+```
+查看inventory，节点2已经能被识别：
+```
+[grid@orcl2:/home/grid]$ /u01/app/11.2.0/grid/OPatch/opatch lsinventory 
+Oracle Interim Patch Installer version 11.2.0.3.4 
+Copyright (c) 2012, Oracle Corporation.  All rights reserved.
+
+ Oracle Home       : /u01/app/11.2.0/grid 
+Central Inventory : /u01/app/oraInventory 
+   from           : /u01/app/11.2.0/grid/oraInst.loc 
+OPatch version    : 11.2.0.3.4 
+OUI version       : 11.2.0.4.0 
+Log file location : /u01/app/11.2.0/grid/cfgtoollogs/opatch/opatch2013-09-06_22-01-23PM_1.log 
+
+ Lsinventory Output file location : /u01/app/11.2.0/grid/cfgtoollogs/opatch/lsinv/lsinventory2013-09-06_22-01-23PM.txt 
+
+ -------------------------------------------------------------------------------- 
+Installed Top-level Products (1):  
+
+ Oracle Grid Infrastructure 11g                                       11.2.0.4.0 
+There are 1 products installed in this Oracle Home. 
+
+ There are no Interim patches installed in this Oracle Home. 
+
+ Rac system comprising of multiple nodes 
+  Local node = orcl2 
+  Remote node = orcl1 
+
+ -------------------------------------------------------------------------------- 
+
+ OPatch succeeded. 
+[grid@orcl2:/home/grid]$  
+```
+ <b>EOF</b> 

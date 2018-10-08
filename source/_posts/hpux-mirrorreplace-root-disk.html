@@ -1,0 +1,103 @@
+---
+layout: post
+title: HPUX Mirror(replace) root disk
+categories:
+- hpux
+tags:
+published: true
+comments: false
+date: 2013-08-12
+---
+<p>一、备份操作系统
+<!--more-->
+<pre>make_tape_recovery –A –C –v</pre>
+二、更换系统镜像根盘的步骤：<br />
+1、首先扫描系统disk，找出有问题的disk，<br />
+查看磁盘是否有unclaimed或NO_HW
+<pre>#ioscan －fnCdisk</pre>      <br />
+查看磁盘是否有unavliable
+<pre>#vgdisplay -v</pre>          <br />
+查看是否有stale
+<pre>#lvdisplay -v /dev/vg00/lvol* |grep stale</pre>   <br />
+现场情况是ioscan检查硬盘是claimed状态，但vgdisplay –v查看是unavliable状态，lvdisplay –v 查看有stale。<br />
+2、确定坏盘（cXtYdZ）的位置 
+<pre>#dd if=/dev/rdsk/c5t5d0 of=/dev/null bs=1024k </pre>
+坏盘cXtYdZ 的状态灯长亮（其它的disk在正常的情况下，灯都是闪烁的），或者通过磁盘cXtYdZ的SCSI ID号来确认坏盘的位置。<br />
+因为坏盘上已经有故障，因此作dd的时候很容易hang住，因此还是选择在好盘上做dd，灯长亮的那块盘为好盘，另一块就是坏盘。
+<br />
+3、去除坏盘镜像
+<pre>for lvol in lvol1 lvol2 ... lvol8
+do
+lvreduce -m 0 /dev/vg00/$lvol /dev/dsk/c5t5d0
+lvreduce -m 0 /dev/vg00/oracle /dev/dsk/c5t5d0
+done
+</pre>
+11.31可用DSF路径代替：
+<pre>
+for lvol in lvol1 lvol2 ... lvol8
+do
+lvreduce -m 0 /dev/vg00/$lvol /dev/disk/disk13
+lvreduce -m 0 /dev/vg00/oracle /dev/disk/disk13
+done
+</pre>
+请注意，需要将所有在vg00里面的lv镜像都拆除。
+<pre>
+#vgreduce -f /dev/vg00
+</pre>
+4、在线热插拔拔出坏盘，插入带来的新硬盘（注意：在正确的机器上拔出正确的盘并且做好防静电措施）。<br />
+5、查看系统是否发现新插入的磁盘和状态
+<pre>#ioscan －fnCdisk</pre>  <br />
+6、安装设备路径
+<pre>#insf -eCdisk</pre>
+7、镜像磁盘
+<pre>
+#pvcreate -fB /dev/rdsk/c5t5d0          ;为该磁盘创建物理镜像卷组
+#pvcreate -fB /dev/rdisk/disk13         ;11.31可使用DSF路径
+#vgextend /dev/vg00 /dev/dsk/c5t5d0     ;扩展vg00至镜像磁盘
+#mkboot -l /dev/rdsk/c5t5d0             ;创建boot分区
+#mkboot -a "hpux -lq(;0)/stand/vmunix" /dev/rdsk/c5t5d0     
+</pre>
+8、将根盘卷中所有lv都镜像到新建立的可启动盘上。（注意：首先镜像lvol1)
+<pre>
+for lvol in lvol1 lvol2 ... lvol8
+do
+lvextend -m 1 /dev/vg00/$lvol /dev/rdsk/c5t5d0
+lvextend -m 1 /dev/vg00/oracle /dev/rdsk/c5t5d0
+done
+</pre>
+or
+<pre>
+for lvol in lvol1 lvol2 ... lvol8
+do
+lvextend -m 1 /dev/vg00/$lvol /dev/disk/disk13
+lvextend -m 1 /dev/vg00/oracle /dev/disk/disk13
+done
+</pre>
+9、更新BDRA 信息
+```
+#lvlnboot -b /dev/vg00/lvol1
+#lvlnboot -r /dev/vg00/lvol3
+#lvlnboot -s /dev/vg00/lvol2
+#lvlnboot -d /dev/vg00/lvol2
+#[root@rp7430:/]#ioscan -funCdisk
+Class     I  H/W Path       Driver S/W State   H/W Type     Description
+=======================================================================
+disk      0  1/0/0/3/0.6.0  sdisk   CLAIMED     DEVICE       HP 146 GST3146707LC
+                           /dev/dsk/c0t6d0   /dev/rdsk/c0t6d0
+disk      1  1/0/0/3/1.2.0  sdisk   CLAIMED     DEVICE       HP      DVD-ROM 305
+                           /dev/dsk/c1t2d0   /dev/rdsk/c1t2d0
+disk      4  1/0/1/1/0/1/1.6.0  sdisk   CLAIMED     DEVICE       HP 146 GST3146707LC
+                           /dev/dsk/c3t6d0   /dev/rdsk/c5t5d0            #==mirror disk
+#[root@rp7430:/]#setboot -a 1/0/1/1/0/1/1.6.0
+```
+10、确认镜像情况
+<pre>
+#lvlnboot -R /dev/vg00
+#lvlnboot -v
+#setboot -v
+#lvdisplay -v /dev/vg00/lvoln|more
+#lifls /dev/disk/disk13
+ISL          AUTO         HPUX         PAD          LABEL       
+#lifls /dev/disk/disk2
+HPUX         ISL          AUTO         PAD          LABEL  
+</pre>

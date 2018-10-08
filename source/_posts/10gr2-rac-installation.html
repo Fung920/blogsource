@@ -1,0 +1,482 @@
+---
+layout: post
+title: installing 10gr2 rac on linux
+categories:
+- oracle
+tags:
+- Installation
+- rac
+published: true
+comments: false
+date: 2014-03-30
+---
+ 实验环境：Oracle Enterprises Linux 5.8 x64 + Oracle 10gr2 RAC 
+<!--more-->
+<pre>
+OCR:/dev/raw/raw1,/dev/raw/raw2 
+Votedisk:/dev/raw/raw3,/dev/raw/raw4,/dev/raw/raw5 
+Datafile:ASM with OMF 
+#IP规划如下： 
+#public 
+192.168.192.188         oel1.oraclema.com     oel1 
+192.168.192.189         oel2.oraclema.com     oel2 
+#VIP 
+192.168.192.178         oel1-vip.oraclema.com oel1-vip 
+192.168.192.179         oel2-vip.oraclema.com oel2-vip 
+#heartbeat 
+10.10.10.188            oel1-prv 
+10.10.10.189            oel2-prv 
+</pre>
+ <h1>1.安装所需的包</h1>
+```
+[root@oel1 ~]# yum install oracle-validated 
+[root@oel1 ~]# yum install oracleasm 
+```
+
+ <h1>2.配置时间同步</h1>
+以节点1为时间服务器，使用rdate进行时间同步 
+```
+[root@oel1 ~]# vi /etc/xinetd.d/time-stream 
+修改disable=yes为disable=no 
+启动xinetd 
+[root@oel1 ~]# service xinetd start 
+节点2同步： 
+[root@oel2 yum.repos.d]# rdate -s oel1 
+[root@oel2 yum.repos.d]# crontab -l 
+* * * * * rdate -s oel1 
+```
+
+ <h1>3.裸设备设置</h1>
+首先要对共享磁盘mapping过来的盘进行分区。确保一点节点分区完后，其他节点fdisk -l能正常扫描到。 
+
+ 	修改裸设备配置文件： 
+```
+[root@oel1 ~]# cat /etc/udev/rules.d/60-raw.rules  
+# Enter raw device bindings here. 
+#
+# An example would be: 
+#   ACTION=="add", KERNEL=="sda", RUN+="/bin/raw /dev/raw/raw1 %N" 
+# to bind /dev/raw/raw1 to /dev/sda, or 
+#   ACTION=="add", ENV{MAJOR}=="8", ENV{MINOR}=="1", RUN+="/bin/raw /dev/raw/raw2 %M %m" 
+# to bind /dev/raw/raw2 to the device with major 8, minor 1. 
+ACTION=="add", KERNEL=="sdb1",RUN+="/bin/raw /dev/raw/raw1 %N" 
+ACTION=="add", KERNEL=="sdc1",RUN+="/bin/raw /dev/raw/raw2 %N" 
+ACTION=="add", KERNEL=="sdd1",RUN+="/bin/raw /dev/raw/raw3 %N" 
+ACTION=="add", KERNEL=="sde1",RUN+="/bin/raw /dev/raw/raw4 %N" 
+ACTION=="add", KERNEL=="sdf1",RUN+="/bin/raw /dev/raw/raw5 %N" 
+ACTION=="add", KERNEL=="raw[1-5]", OWNER="oracle", GROUP="oinstall", MODE="660" 
+```
+	启动udev服务，确保两个节点都能识别。 
+```
+[root@oel1 ~]# start_udev 
+Starting udev: [  OK  ] 
+[root@oel1 ~]# ll /dev/raw/raw* 
+crw-rw---- 1 oracle oinstall 162, 1 Mar 27 16:57 /dev/raw/raw1 
+crw-rw---- 1 oracle oinstall 162, 2 Mar 27 16:57 /dev/raw/raw2 
+crw-rw---- 1 oracle oinstall 162, 3 Mar 27 16:57 /dev/raw/raw3 
+crw-rw---- 1 oracle oinstall 162, 4 Mar 27 16:57 /dev/raw/raw4 
+crw-rw---- 1 oracle oinstall 162, 5 Mar 27 16:57 /dev/raw/raw5 
+```
+<h1>4.配置节点ssh信任</h1>
+```
+[oracle@oel1 ~]$ mkdir ~/.ssh 
+[oracle@oel2 ~]$ chmod 700 ~/.ssh 
+[oracle@oel2 ~]$ ssh-keygen -t rsa 
+[oracle@oel2 ~]$ ssh-keygen -t dsa 
+[oracle@oel1 ~]$ cat ~/.ssh/*.pub >> ~/.ssh/authorized_keys 
+#以上动作两个节点都需要做。 
+#节点1： 
+[oracle@oel1 ~]$ cat ~/.ssh/*.pub >> ~/.ssh/authorized_keys 
+[oracle@oel1 ~]$ scp ~/.ssh/authorized_keys oel2:~/.ssh/authorized_keys 
+#节点2： 
+[oracle@oel2 ~]$ cat ~/.ssh/*.pub >> ~/.ssh/authorized_keys 
+[oracle@oel2 ~]$ scp ~/.ssh/authorized_keys oel1:~/.ssh/authorized_keys 
+[oracle@oel2 ~]$ ssh oel1 date 
+```
+<h1>5.创建所需目录</h1>
+```
+[root@oel1 ~]# mkdir -p /u01/app/oracle 
+[root@oel1 ~]# mkdir -p /u01/app/oracle/product/crs 
+[root@oel1 ~]# mkdir -p /u01/app/oracle/product/10.2.0/db_1 
+[root@oel1 ~]# chown -R oracle:oinstall /u01 
+```
+<h1>6.修改内核参数</h1>
+本实验采用oracle-validated，安装过程中会自动修改内核参数，只需要将11g的屏蔽，修改为10g的即可。修改完成后，使用以下命令使设置生效： 
+```
+[root@oel1 ~]# sysctl -p 
+net.ipv4.ip_forward = 0 
+net.ipv4.conf.default.rp_filter = 2 
+net.ipv4.conf.default.accept_source_route = 0 
+kernel.core_uses_pid = 1 
+net.ipv4.tcp_syncookies = 1 
+fs.file-max = 6815744 
+kernel.msgmni = 2878 
+kernel.msgmax = 8192 
+kernel.msgmnb = 65536 
+kernel.sem = 250 32000 100 142 
+kernel.shmmni = 4096 
+kernel.shmall = 1073741824 
+kernel.shmmax = 4398046511104 
+kernel.sysrq = 1 
+net.core.rmem_default = 262144 
+net.core.rmem_max = 2097152 
+net.core.wmem_default = 262144 
+net.core.wmem_max = 262144 
+fs.aio-max-nr = 3145728 
+net.ipv4.ip_local_port_range = 1024 65000 
+vm.min_free_kbytes = 51200 
+```
+<h1>7.配置IO Fencing</h1>
+有关IO Fencing请看文章结尾说明。 
+```
+#查找模块位置： 
+[root@oel1 ~]# find /lib/modules -name "hangcheck-timer.ko" 
+/lib/modules/2.6.32-300.10.1.el5uek/kernel/drivers/char/hangcheck-timer.ko 
+/lib/modules/2.6.18-308.el5/kernel/drivers/char/hangcheck-timer.ko 
+/lib/modules/2.6.32-300.10.1.el5uek.debug/kernel/drivers/char/hangcheck-timer.ko 
+[root@oel1 ~]# modprobe hangcheck-timer 
+#添加随机启动： 
+vi /etc/rc.d/rc.local 
+modprobe hangcheck-timer 
+#配置模块参数： 
+[root@rac1db ~]# vi /etc/modprobe.conf 
+options hangcheck-timer hangcheck_tick=30 hangcheck_margin=180 
+```
+<h1>8.ASMLib设置</h1>
+```
+[root@oel1 ~]# /etc/init.d/oracleasm configure 
+[root@oel1 ~]# /etc/init.d/oracleasm createdisk DATA1 /dev/sdg1  
+Marking disk "DATA1" as an ASM disk: [  OK  ] 
+#节点2扫描： 
+[root@oel2 rules.d]# /etc/init.d/oracleasm scandisks 
+Scanning the system for Oracle ASMLib disks: [  OK  ] 
+[root@oel2 rules.d]# /etc/init.d/oracleasm listdisks 
+DATA1 
+```
+<h1>9.oracle用户环境变量</h1>
+```
+export EDITOR=vi 
+# User specific environment and startup programs 
+PATH=$PATH:$HOME/bin 
+export ORACLE_BASE=/u01/app/oracle 
+export ORA_CRS_HOME=$ORACLE_BASE/product/crs 
+export ORACLE_HOME=$ORACLE_BASE/product/10.2.0/db_1 
+#export ORACLE_HOME=$ORACLE_BASE/product/11.2.0/db_1 
+export ORACLE_SID=orcl1 
+export PATH=.:${PATH}:$HOME/bin:$ORACLE_HOME/bin 
+export PATH=${PATH}:/usr/bin:/bin:/usr/bin/X11:/usr/local/bin 
+export PATH=${PATH}:$ORACLE_BASE/common/oracle/bin:$ORACLE_BASE/product/crs/bin 
+export ORACLE_TERM=xterm 
+export TNS_ADMIN=$ORACLE_HOME/network/admin 
+export ORA_NLS10=$ORACLE_HOME/nls/data 
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib 
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$ORACLE_HOME/oracm/lib 
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/lib:/usr/lib:/usr/local/lib 
+export CLASSPATH=$ORACLE_HOME/JRE 
+export CLASSPATH=${CLASSPATH}:$ORACLE_HOME/jlib 
+export CLASSPATH=${CLASSPATH}:$ORACLE_HOME/rdbms/jlib 
+export CLASSPATH=${CLASSPATH}:$ORACLE_HOME/network/jlib 
+export THREADS_FLAG=native 
+export TEMP=/tmp 
+export TMPDIR=/tmp 
+export DISPLAY=192.168.56.1:0.0 
+export PS1='[$LOGNAME@$HOSTNAME:$PWD]$ ' 
+umask 022 
+```
+<h1>10.安装Clusterware软件</h1>
+实验OS为OEL 5，因此需要修改Linux release：<br /> 
+```
+[root@oel1 ~]# cat /etc/redhat-release 
+redhat-4
+```
+	安装步骤： 
+```
+[oracle@oel1:/worktmp/clusterware]$ ./runInstaller 
+Specify Inventory directory and credentials： 
+	Inventory:/u01/app/oracle/oraInventory 
+	OS Group:oinstall 
+Specify Home Detail: 
+	Name:OraCrs10g_home 
+	Path:/u01/app/oracle/product/crs 
+Specify Cluster Configuration: 
+	Cluster Name:orcl 
+	Cluster Nodes:add all nodes information, you may need modify something 
+Specify Network Interface Usage: 
+	By default,there is no need modify. Please confirm with you network setting. 
+Specify Oracle Cluster Registry Location: 
+	Normal Redundancy,/dev/raw/raw1,/dev/raw/raw2 
+Specify Vote Disk Location: 
+	Normal Redundancy,/dev/raw/raw3,/dev/raw/raw4,/dev/raw/raw5 
+#最后以root用户分别在两个节点执行以下脚本： 
+/u01/app/oracle/oraInventory/orainstRoot.sh 
+/u01/app/oracle/product/crs/root.sh 
+```
+最后一个节点执行root.sh时候，最后执行vipca遇到 
+<code>error while loading shared libraries: libpthread.so.0: cannot open shared object file: No such file or directory.</code>此错误为Redhat的bug。可以先不理会，打Patch至10.2.0.4，然后手工执行vipca。最后因为vip的原因会导致安装最后一步检查的过程报错：<br /> 
+<code>
+ The "/u01/app/oracle/product/crs/cfgtoollogs/configToolFailedCommands" script contains all commands that failed, were skipped or were cancelled. This file may be used to run these configuration assistants outside of OUI. Note that you may have to update this script with passwords (if any) before executing the same. </code>
+<br />
+ 可以手动执行<code>/u01/app/oracle/product/crs/cfgtoollogs/configToolFailedCommands</code>看看是什么错，一般就是VIP无法确认： 
+```
+Checking existence of VIP node application (required) 
+Check failed.  
+Check failed on nodes:  
+        oel2,oel1 
+```
+<h1>11.Patch Clusterware</h1>
+```
+[oracle@oel1:/u01/worktmp/10gr2/Disk1]$ ./runInstaller 
+Specify Home Detail: 
+	Name:OraCrs10g_home 
+	Path:/u01/app/oracle/product/crs 
+```
+其他的一切照默认安装。安装完后同样执行脚本：
+<pre> 
+[root@oel1:/u01/app/oracle]# /u01/app/oracle/product/crs/bin/crsctl stop crs 
+Stopping resources. 
+Successfully stopped CRS resources  
+Stopping CSSD. 
+Shutting down CSS daemon. 
+Shutdown request successfully issued. 
+[root@oel2:/u01/app/oracle]# /u01/app/oracle/product/crs/bin/crsctl stop crs 
+Stopping resources. 
+Successfully stopped CRS resources  
+Stopping CSSD. 
+Shutting down CSS daemon. 
+Shutdown request successfully issued. 
+[root@oel1:/u01/app/oracle]# /u01/app/oracle/product/crs/install/root102.sh 
+[root@oel2:/u01/app/oracle]# /u01/app/oracle/product/crs/install/root102.sh 
+#查看集群信息： 
+[root@oel1:/u01/app/oracle/product/crs]# bin/crsctl check crs 
+CSS appears healthy 
+CRS appears healthy 
+EVM appears healthy 
+[root@oel1:/u01/app/oracle/product/crs]# bin/crsctl query css votedisk 
+ 0.     0    /dev/raw/raw3 
+ 1.     0    /dev/raw/raw4 
+ 2.     0    /dev/raw/raw5 
+
+ located 3 votedisk(s). 
+[root@oel1:/u01/app/oracle/product/crs]# bin/ocrcheck 
+Status of Oracle Cluster Registry is as follows : 
+         Version                  :          2 
+         Total space (kbytes)     :     200560 
+         Used space (kbytes)      :        544 
+         Available space (kbytes) :     200016 
+         ID                       :  841952053 
+         Device/File Name         : /dev/raw/raw1 
+                                    Device/File integrity check succeeded 
+         Device/File Name         : /dev/raw/raw2 
+                                    Device/File integrity check succeeded 
+
+          Cluster registry integrity check succeeded 
+
+</pre>
+<h1>12.配置VIP资源</h1>
+以root用户执行vipca，配置VIP信息: 
+```
+[oracle@oel1:/u01/worktmp/10gr2/Disk1]$ which vipca 
+/u01/app/oracle/product/crs/bin/vipca 
+[root@oel1:/u01/app/oracle/product/crs]# export DISPLAY=192.168.56.1:0.0 
+[root@oel1:/u01/app/oracle/product/crs]# /u01/app/oracle/product/crs/bin/vipca 
+#根据图形界面提示填入vip名称及ip地址。 
+#完成后可查看资源状态： 
+[root@oel1:/u01/app/oracle/product/crs]# bin/crs_stat -t 
+Name           Type           Target    State     Host         
+------------------------------------------------------------ 
+ora.oel1.gsd   application    ONLINE    ONLINE    oel1         
+ora.oel1.ons   application    ONLINE    ONLINE    oel1         
+ora.oel1.vip   application    ONLINE    ONLINE    oel1         
+ora.oel2.gsd   application    ONLINE    ONLINE    oel2         
+ora.oel2.ons   application    ONLINE    ONLINE    oel2         
+ora.oel2.vip   application    ONLINE    ONLINE    oel2  
+```
+<h1>13.安装数据库软件</h1>  
+```
+[oracle@oel1:/u01/worktmp/10gr2/database]$ ./runInstaller 
+Specify Installation Type： 
+	Enterprise Edtion 
+Specify Home Detail: 
+	Name:OraDb10g_home 
+	Path:/u01/app/oracle/product/10.2.0/db_1 
+Specify Hardware Cluster Installation Mode: 
+	Cluster Installation:Select all nodes 
+Select Configuration Option: 
+	Install database Software Only 
+#安装完成执行脚本： 
+[root@oel1:/u01/app/oracle]#/u01/app/oracle/product/10.2.0/db_1/root.sh 
+Running Oracle10 root.sh script... 
+
+ The following environment variables are set as: 
+    ORACLE_OWNER= oracle 
+    ORACLE_HOME=  /u01/app/oracle/product/10.2.0/db_1 
+
+ Enter the full pathname of the local bin directory: [/usr/local/bin]:  
+   Copying dbhome to /usr/local/bin ... 
+   Copying oraenv to /usr/local/bin ... 
+   Copying coraenv to /usr/local/bin ... 
+
+ Creating /etc/oratab file... 
+Entries will be added to the /etc/oratab file as needed by 
+Database Configuration Assistant when a database is created 
+Finished running generic part of root.sh script. 
+Now product-specific root actions will be performed. 
+```
+<h1>14.Patch数据库软件</h1>
+<pre>
+[oracle@oel1:/u01/worktmp/10gr2/Disk1]$ ./runInstaller 
+Specify Home Detail: 
+	Name:OraDb10g_home 
+	Path: /u01/app/oracle/product/10.2.0/db_1 
+#其他的一切照默认安装。安装完后同样执行脚本： 
+[root@oel1:/u01/app/oracle]# /u01/app/oracle/product/10.2.0/db_1/root.sh 
+#Netca配置监听 
+#完成后查看状态： 
+[root@oel2:/u01/app/oracle/product/crs]# bin/crs_stat -t 
+Name           Type           Target    State     Host         
+------------------------------------------------------------ 
+ora....L1.lsnr application    ONLINE    ONLINE    oel1         
+ora.oel1.gsd   application    ONLINE    ONLINE    oel1         
+ora.oel1.ons   application    ONLINE    ONLINE    oel1         
+ora.oel1.vip   application    ONLINE    ONLINE    oel1         
+ora....L2.lsnr application    ONLINE    ONLINE    oel2         
+ora.oel2.gsd   application    ONLINE    ONLINE    oel2         
+ora.oel2.ons   application    ONLINE    ONLINE    oel2         
+ora.oel2.vip   application    ONLINE    ONLINE    oel2         
+
+</pre>
+<h1>15.dbca创建ASM实例</h1>
+配置步骤如下： 
+```
+Configure Automatic Storage Management 
+Select All Nodes 
+Enter SYS Password 
+Initialization parameter file choose init file 
+```
+创建完实例后，创建DATA磁盘组： 
+```
+DiskGroup Name：DATA 
+Redundancy：External 
+Change Disk Discovery Path：/dev/oracleasm/disks/* 
+```
+完成后查看DG状态： 
+```
+[oracle@oel2:/home/oracle]$ export ORACLE_SID=+ASM2 
+[oracle@oel2:/home/oracle]$ sqlplus "/as sysdba" 
+SQL> select group_number,path,state,total_mb,free_mb 
+from gv$asm_disk; 
+
+ GROUP_NUMBER PATH                                               STATE      TOTAL_MB    FREE_MB 
+------------ -------------------------------------------------- -------- ---------- ---------- 
+           1 /dev/oracleasm/disks/DATA1                         NORMAL         8189       8096 
+           1 /dev/oracleasm/disks/DATA1                         NORMAL         8189       8096 
+
+ SQL> select name,state,type,total_mb,free_mb 
+from gv$asm_diskgroup;  
+
+ NAME                           STATE       TYPE     TOTAL_MB    FREE_MB 
+------------------------------ ----------- ------ ---------- ---------- 
+DATA                           MOUNTED     EXTERN       8189       8096 
+DATA                           MOUNTED     EXTERN       8189       8096 
+```
+查看集群资源状态： 
+```
+[root@oel1:/u01/app/oracle/product/crs]# bin/crs_stat -t -v 
+Name           Type           R/RA   F/FT   Target    State     Host         
+---------------------------------------------------------------------- 
+ora....SM1.asm application    0/5    0/0    ONLINE    ONLINE    oel1         
+ora....L1.lsnr application    0/5    0/0    ONLINE    ONLINE    oel1         
+ora.oel1.gsd   application    0/5    0/0    ONLINE    ONLINE    oel1         
+ora.oel1.ons   application    0/3    0/0    ONLINE    ONLINE    oel1         
+ora.oel1.vip   application    0/0    0/0    ONLINE    ONLINE    oel1         
+ora....SM2.asm application    0/5    0/0    ONLINE    ONLINE    oel2         
+ora....L2.lsnr application    0/5    0/0    ONLINE    ONLINE    oel2         
+ora.oel2.gsd   application    0/5    0/0    ONLINE    ONLINE    oel2         
+ora.oel2.ons   application    0/3    0/0    ONLINE    ONLINE    oel2         
+ora.oel2.vip   application    0/0    0/0    ONLINE    ONLINE    oel2 
+#为归档添加目录 
+export ORACLE_SID=+ASM1 
+asmcmd -p 
+[oracle@oel2:/u01/app/oracle/admin/+ASM/bdump]$ asmcmd 
+ASMCMD> ls 
+DATA/ 
+ASMCMD> cd data 
+ASMCMD> ls 
+ORCL/ 
+ASMCMD> mkdir arch     
+```
+<h1>16.dbca建库</h1>
+```
+[oracle@oel1:/home/oracle]$ dbca 
+Create Database 
+Select All Nodes 
+Custom Database 
+Global Name：orcl 
+取消EM 
+Enter Password 
+Storage mechanism：Choose ASM 
+Select DATA Group 
+Use Oracle-Managed Files 
+Enable Archiving: +DATA/arch 
+Database Services: 
+	Add service name:orcl_taf 
+	Two nodes choose Preferred 
+	TAF Policy:Basic 
+#查看资源状态： 
+[root@oel2:/u01/app/oracle/product/crs]# bin/crs_stat -t -v 
+Name           Type           R/RA   F/FT   Target    State     Host         
+---------------------------------------------------------------------- 
+ora....SM1.asm application    0/5    0/0    ONLINE    ONLINE    oel1         
+ora....L1.lsnr application    0/5    0/0    ONLINE    ONLINE    oel1         
+ora.oel1.gsd   application    0/5    0/0    ONLINE    ONLINE    oel1         
+ora.oel1.ons   application    0/3    0/0    ONLINE    ONLINE    oel1         
+ora.oel1.vip   application    0/0    0/0    ONLINE    ONLINE    oel1         
+ora....SM2.asm application    0/5    0/0    ONLINE    ONLINE    oel2         
+ora....L2.lsnr application    0/5    0/0    ONLINE    ONLINE    oel2         
+ora.oel2.gsd   application    0/5    0/0    ONLINE    ONLINE    oel2         
+ora.oel2.ons   application    0/3    0/0    ONLINE    ONLINE    oel2         
+ora.oel2.vip   application    0/0    0/0    ONLINE    ONLINE    oel2         
+ora.orcl.db    application    0/0    0/1    ONLINE    ONLINE    oel1         
+ora....l1.inst application    0/5    0/0    ONLINE    ONLINE    oel1         
+ora....l2.inst application    0/5    0/0    ONLINE    ONLINE    oel2         
+ora...._taf.cs application    0/0    0/1    ONLINE    ONLINE    oel2         
+ora....cl1.srv application    0/0    0/0    ONLINE    ONLINE    oel1         
+ora....cl2.srv application    0/0    0/0    ONLINE    ONLINE    oel2         
+[root@oel1:/u01/app/oracle/product/crs]# bin/srvctl config database -d orcl -a 
+oel1 orcl1 /u01/app/oracle/product/10.2.0/db_1 
+oel2 orcl2 /u01/app/oracle/product/10.2.0/db_1 
+DB_NAME: orcl 
+ORACLE_HOME: /u01/app/oracle/product/10.2.0/db_1 
+SPFILE: +DATA/orcl/spfileorcl.ora 
+DOMAIN: null 
+DB_ROLE: null 
+START_OPTIONS: null 
+POLICY:  AUTOMATIC 
+ENABLE FLAG: DB ENABLED 
+```
+<h1>17.集群的一些概念</h1>
+ <p>摘自《大话Oracle RAC》</p>
+
+  <p>10g中的hangcheck-timer模块，是Linux提供的一个内核级的IO-Fencing模块，这个模块会监控Linux内核运行状态，如果长时间挂起，此模块会自动重启系统。配置这个模块需要两个参数，hangcheck_tick和hangcheck_margin。前一个参数用于定义多长时间检查一下，缺省值是30秒。第二个参数定义一个延时上限，缺省值为180秒。</p>
+
+ <p> CRS本身还有一个MissCount的参数，可以通过crsctl get css miscount命令查看。Hangcheck-timer根据hangcheck_tick的设置，定时检查内核，只要两次检查的时间间隔小于hangcheck_tick+hangcheck_margin，都会认为内核运行正常，否则，就意味着运行异常，这个模块会重启系统。</p>
+
+  <p>这3个参数会影响RAC重构，假设节点间Heartbeat丢失，Clusterware必须确保在重构时，故障节点确实是Dead状态。如果仅仅因为节点负载过高导致心跳丢失，它是不会重启的。因此，MissCount必须大于两个参数的和，这样，节点重构时，其他节点已经被hangcheck-timer模块重启。</p>
+
+  <p>这种机制涉及到集群原理，在大多数集群设计中，都要考虑到几个问题：1.健忘症(Amnesia)，2.脑裂(Split Brain)，3.IO Fencing。</p>
+
+  <p>1的现象表现为集群配置文件存放在各个节点的本地，当集群正常运行时，用户可以在任意节点更改集群配置，同时自动同步到其他节点。但当某个节点正常关闭，在运行的某个节点修改配置文件，所做的修改是会丢失的。</p>
+
+ <p> 2的现象更简单，但却涉及更复杂的原理。在集群中，节点是通过Heartbeat了解彼此健康状况的。如果心跳出现问题，节点间无法正常通讯，每个节点都会认为自己是正常节点，从而导致资源的争抢，同时意味这数据灾难，这就是脑裂。为了防止脑裂现象，任何的集群都会配置一个仲裁投票机制，即配置一个集群锁盘(仲裁盘)。在三个节点的集群中，如果A节点故障，那么B和C作为一个整体得到BC两票，A得到一票，因此A被剔除集群，BC构成一个新的集群。如果在两个节点的集群上，这种情况就无法实现，因此，又引进一个Quorum Disk，这个共享磁盘也代表一票，集群节点发生故障时候，两个节点会同时去抢qdisk的投票，最先达到的请求先被满足，剩下的节点被剔除。</p>
+
+  <p>当脑裂发生时候，仅仅通过投票算法解决谁获取集群控制权是不够的，还要保证被剔除的节点无法对共享磁盘数据进行操作才行。这就是IO Fencing要解决的问题。</p>
+
+  <p>Fence设备有软件和硬件两种。</p>
+
+  <p>硬件Fence：Power Fencing，如果Power loss，该节点就无法IO，此功能需要整合power management功能来完成，例如iLO，IPMI，DRAC，RSA等。</p>
+
+ <p>软件Fence：fibre channel zoning，一般由fibre channel switches来切断host到SAN的路径；SCSI-3 reservations：正常节点使用SCSI Reserve命令锁住存储设备，故障节点发现存储被锁后，知道自己被踢出集群，就要自己进行重启，以恢复到正常状态。</p>
+
+ <p>在Oracle RAC中，使用OCR磁盘来解决健忘症的问题，使用Votedisk来解决脑裂问题。10g RAC中，Linux平台使用hangcheck-timer解决IO Fencing问题(由css服务保证)，UNIX平台则由进程Process Monitor Daemon(oprocd)负责。而在10.2.0.4中，已经在Linux中引进oprocd来取代hangcheck-timer。11gr2中，使用cssdagent来解决IO Fencing的问题。</p>
+ 
+ 

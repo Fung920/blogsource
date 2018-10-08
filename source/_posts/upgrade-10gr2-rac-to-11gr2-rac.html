@@ -1,0 +1,854 @@
+---
+layout: post
+title: Upgrade 10gr2 RAC to 11gr2 RAC
+categories:
+- oracle
+tags:
+- upgrade
+- rac
+published: true
+comments: false
+date: 2014-04-06
+---
+<p>本文演示了如何从10gr2 RAC升级至11gr2 RAC，示例中的10g版本为10.2.0.4，可以直接升级至11.2.0.4。11g升级路径如下：
+<!--more-->
+	<li>直接升级路径：9.2.0.8 +，10.1.0.5+，10.2.0.2+，11.1.0.6+</li>
+	<li>9.0.1.3=&gt;9.0.1.4=&gt;10.2.0.4=&gt;11.2</li>
+	<li>9.2.0.3=&gt;9.2.0.8=&gt;11.2</li>
+一些语法及惯用语说明:</p>
+
+<code>ORACLE_HOME</code>、<code>ORACLE_BASE</code>：Database软件安装目录<br />
+
+<code>GRID_HOME</code>：11g Grid Infrastructure软件安装目录<br />
+
+<code>CRS_HOME</code>：10g Clusterware安装目录<br />
+
+<p>以#开头表示root用户执行，以$表示grid或者oracle用户执行，SQL&gt; 则表示SQL*Plus执行。
+在升级前，有些地方需要注意:
+	<li>CRS必须在DB前升级</li>
+	<li>11g新版本带来很多改变，10g中的CRS和ASM HOME均不存在了，而是集中到同一个地方：GRID_HOME，同时也引进了SCAN的概念</li>
+	<li>Raw Device在RAC升级中，仍旧支持OCR及Voting disk，但在全新的安装中，已经不支持裸设备存储OCR及Voting Disk了</li>
+	<li>在11g中，GI的安装及管理用户单独分离出来，常见以grid命名。虽然仍然可以用同一用户安装维护，但Oracle强烈建议分开。</li>
+	<li>在以前的版本中，ORACLE_HOME都在ORACLE_BASE目录下，但是在11g RAC中，GRID_HOME则不是在GRID_BASE中，两者是在同一级目录下。ORACLE_HOME则还是在ORACLE_BASE下。</li>
+	<li>11g以后patch是和base一起的，因此不需要跟10g一样先安装base版本再打补丁。</li>
+本次实验升级方法：以非滚动升级方式升级。
+<h3>1.升级前准备</h3>
+<h4>1.1.升级前信息收集</h4>
+升级前后信息对比如下，在升级前，先要创建grid用户，创建相关目录并且赋权。
+<p>{% img /images/upgrade10g211g.png %}</p>
+<h4>1.2.创建相关目录</h4>
+在两个节点执行相同内容。
+#创建grid用户，添加环境变量<br>
+```
+[root@oel1:/u01/app]# useradd -u 54322 grid -g oinstall -G dba
+[root@oel1:/u01/app]# cat /home/grid/.bash_profile
+export TMP=/tmp
+export TMPDIR=$TMP
+export ORACLE_SID=+ASM1
+export ORACLE_BASE=/u01/app/grid
+export ORACLE_HOME=/u01/app/11gr2/grid
+export JAVA_HOME=$ORACLE_HOME/jdk
+export ORACLE_TERM=xterm
+export NLS_DATE_FORMAT="yyyy-mm-dd Hh34:MI:SS"
+export ORA_NLS11=$ORACLE_HOME/nls/data
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib
+export CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib
+export PATH=/usr/sbin:$ORACLE_HOME/bin:$JAVA_HOME:$PATH
+export PS1='[$LOGNAME@$HOSTNAME:$PWD]$ '
+umask 022
+export DISPLAY=192.168.56.1:0.0
+```
+#创建相关目录并且授权
+```
+[root@oel1:/u01/app]# mkdir -p /u01/app/grid/
+[root@oel1:/u01/app]# mkdir -p /u01/app/11gr2/grid
+[root@oel1:/u01/app]# chown -R grid:oinstall grid/
+[root@oel1:/u01/app]# chown -R grid:oinstall 11gr2/
+[grid@oel2:/u01/app]$ chmod g+w grid/
+[grid@oel2:/u01/app]$ chmod g+w 11gr2/
+[oracle@oel2:/u01/app/oracle/product]$ mkdir -p /u01/app/oracle/product/11gr2
+```
+
+#添加grid用户ssh等效性
+```
+[grid@oel1:/home/grid]$ mkdir -p ~/.ssh
+[grid@oel1:/home/grid]$ mkdir -p ~/.ssh
+[grid@oel1:/home/grid]$ ssh-keygen -t rsa
+[grid@oel1:/home/grid]$ ssh-keygen -t dsa
+[grid@oel1:/home/grid]$ cd .ssh
+[grid@oel1:/home/grid/.ssh]$ touch authorized_keys
+[grid@oel1:/home/grid/.ssh]$ cat ~/.ssh/*.pub >>authorized_keys
+[grid@oel1:/home/grid/.ssh]$ ssh oel1 cat ~/.ssh/id_rsa.pub >>authorized_keys
+[grid@oel1:/home/grid/.ssh]$ ssh oel2 cat ~/.ssh/id_rsa.pub >>authorized_keys
+[grid@oel1:/home/grid/.ssh]$ scp authorized_keys oel2:.ssh/authorized_keys
+```
+验证并且通过测试。
+<h4>1.3.验证安装条件</h4>
+```
+#查看rpm包是否齐全：
+[root@oel1:/u01/app]# rpm -q binutils compat-libstdc++-33 elfutils-libelf \
+elfutils-libelf-devel elfutils-libelf-devel-static \
+gcc gcc-c++ glibc glibc-common glibc-devel \
+glibc-headers kernel-headers ksh libaio libaio-devel \
+libgcc libgomp libstdc++ libstdc++-devel make \
+numactl-devel sysstat unixODBC unixODBC-devel
+#将没安装的包安装上：
+[root@oel1:/u01/app]# mount /dev/cdrom /mnt
+[root@oel1:/u01/app]# yum install -y numactl-devel
+#两个节点安装cvu包：
+[root@oel1:/u01/worktmp/11gr2/grid/rpm]# rpm -ivh cvuqdisk-1.0.9-1.rpm
+```
+<h4>1.4.SCAN DNS设置</h4>
+本例中SCAN的名字为rac-scan.kkdba.com。IP地址如下：
+```
+[root@oel2:/u01/app]# cat /etc/hosts
+# Do not remove the following line, or various programs
+# that require network functionality will fail.
+127.0.0.1               localhost.localdomain localhost
+
+#Public
+192.168.56.123  oel1.kkdba.com       oel1
+192.168.56.124  oel2.kkdba.com       oel2
+
+#Vip
+192.168.56.125  orcl1-vip.kkdba.com  orcl1-vip
+192.168.56.126  orcl2-vip.kkdba.com  orcl2-vip
+
+#Private
+10.10.56.123    orcl1-prv
+10.10.56.124    orcl2-prv
+
+#11gr2 SCAN
+#192.168.56.120 rac-scan.kkdba.com   rac-scan
+#192.168.56.121 rac-scan.kkdba.com   rac-scan
+#192.168.56.122 rac-scan.kkdba.com   rac-scan
+```
+
+
+<p>因在DNS中已经存在rac-scan的解析，因此/etc/hosts文件中取消此解析。11gr2 SCAN DNS简单设置请参照前文：
+<a href="http://www.kkdba.com/11gr2-scan-dns.html">11gr2 RAC SCAN DNS Configuration</a>。
+<!--[11gr2 RAC SCAN DNS Configuration](http://www.kkdba.com/oracle/11gr2-scan-dns.html)-->
+<h4>1.5.NTP时间设置</h4>
+在11gr2中，取消Linux自带的ntpd时间服务，而采用Oracle自带的CTSS(Cluster Time Synchronization Service)服务。因此，ntpd需要停止，以免造成冲突导致集群无法同步。
+```
+[root@oel2:/u01/app]# /etc/init.d/ntpd status
+ntpd is stopped
+```
+两个节点的ntpd已经停止，10g的环境是采用rdate同步。直接屏蔽即可，同时移除ntp设定文档。
+```
+[root@oel2:/u01/app]# crontab -l
+*/1 * * * * rdate -s 192.168.56.123
+[root@oel1:/root]#  mv /etc/ntp.conf /etc/ntp.conf.org
+```
+<h4>1.6.创建GI使用的ASM磁盘组</h4>
+```
+[root@oel1:/root]# /etc/init.d/oracleasm createdisk OCR1 /dev/sdh1
+Marking disk "OCR1" as an ASM disk: [  OK  ]
+[root@oel1:/root]# /etc/init.d/oracleasm createdisk OCR2 /dev/sdi1
+Marking disk "OCR2" as an ASM disk: [  OK  ]
+[root@oel1:/root]# /etc/init.d/oracleasm createdisk OCR3 /dev/sdj1
+Marking disk "OCR3" as an ASM disk: [  OK  ]
+[root@oel2:/root]# /etc/init.d/oracleasm listdisks
+OCR1
+OCR2
+OCR3
+DATA1
+```
+<h4>1.7.备份数据库</h4>
+在升级前先做好备份，可以用于紧急回退。需要备份的数据有OCR，Votiedisk，ORACLE_HOME目录，CRS_HOME目录及数据库RMAN备份。
+```
+#节点1：
+[root@oel1:/backup]# dd if=/dev/raw/raw1 of=./ocr_disk_10gr2.bk
+401562+0 records in
+401562+0 records out
+205599744 bytes (206 MB) copied, 214.279 seconds, 959 kB/s
+[root@oel1:/backup]# dd if=/dev/raw/raw3 of=votedisk_10gr2.bk
+401562+0 records in
+401562+0 records out
+205599744 bytes (206 MB) copied, 233.01 seconds, 882 kB/s
+```
+	注意，OCR备份方式也可以使用Oracle自带命令。
+```
+[root@oel1:/backup]# /u01/app/oracle/product/crs/bin/ocrconfig -export /backup/ocr.dmp
+```
+```
+#备份软件HOME目录：
+[root@oel1:/backup]# tar -cvzf oel1.crs.tgz /u01/app/oracle/product/crs/*
+[root@oel1:/backup]# tar -cvzf oel1.db.tgz /u01/app/oracle/product/10.2.0/db_1/*
+[root@oel1:/backup]# cp /etc/inittab etc_inittab
+[root@oel1:/backup]# mkdir ./etc_init.d/
+[root@oel1:/backup]# cp /etc/init.d/init.* ./etc_init.d/
+[root@oel1:/backup]# tar -cvzf oel1.etcoracle.tgz /etc/oracle/*
+```
+```
+#节点2：
+[root@oel2:/backup]# tar -cvzf oel2.crs.tgz /u01/app/oracle/product/crs/*
+[root@oel2:/backup]# tar -cvzf oel2.db.tgz /u01/app/oracle/product/10.2.0/db_1/*
+[root@oel2:/backup]# tar -cvzf oel2.etcoracle.tgz /etc/oracle/*
+[root@oel2:/backup]# cp /etc/inittab /backup/etc_inittab
+[root@oel2:/backup]# mkdir -p /backup/etc_init.d/
+[root@oel2:/backup]# cp /etc/init.d/init* /backup/etc_init.d/
+```
+RMAN全备数据库：
+```
+run {
+ALLOCATE CHANNEL ch00 TYPE DISK;
+ALLOCATE CHANNEL ch01 TYPE DISK;
+sql 'alter system archive log current';
+BACKUP
+AS BACKUPSET
+SKIP INACCESSIBLE
+TAG hot_db_bk_level0 FORMAT '/backup/rman/bk_%s_%p_%U_%T_%d'
+FULL  DATABASE;
+sql 'alter system archive log current';
+sql 'alter system archive log current';
+sql 'alter system archive log current';
+backup archivelog all delete input format '/backup/rman/arch_%U_%T_%d';
+backup current controlfile tag 'ctl' format '/backup/rman/ctl_%U_%T_%d';
+RELEASE CHANNEL ch00;
+RELEASE CHANNEL ch01;
+}
+```
+如果有EM，需要停止EM。如有需要，可以关闭归档。
+```
+emctl stop dbconsole
+```
+<h3>2.非滚动升级</h3>
+为了安装11g GI，需要屏蔽掉10g的CRS，否则两者会有冲突。滚动升级不需要此步骤。
+<h4>2.1.关闭CRS</h4>
+```
+[root@oel1:/root]# /u01/app/oracle/product/crs/bin/crsctl stop crs
+[root@oel2:/root]# /u01/app/oracle/product/crs/bin/crsctl stop crs
+```
+<h4>2.2.重命名CRS相关文件及目录</h4>
+```
+[root@oel1:/root]# mv /etc/oracle /etc/oracle_orig
+[root@oel1:/root]# mkdir /etc/init.d/bk
+[root@oel1:/root]# mv /etc/init.d/init* /etc/init.d/bk
+[root@oel2:/root]# mv /etc/oracle /etc/oracle_orig
+[root@oel2:/root]# mkdir /etc/init.d/bk
+[root@oel2:/root]# mv /etc/init.d/init* /etc/init.d/bk
+```
+<h4>2.3.两个节点屏蔽/etc/inittab中RAC启动相关选项</h4>
+```
+[root@oel2:/backup]# tail -5 /etc/inittab
+# Run xdm in runlevel 5
+x:5:respawn:/etc/X11/prefdm -nodaemon
+#h1:35:respawn:/etc/init.d/init.evmd run >/dev/null 2>&1 </dev/null
+#h3:35:respawn:/etc/init.d/init.cssd fatal >/dev/null 2>&1 </dev/null
+#h4:35:respawn:/etc/init.d/init.crsd run >/dev/null 2>&1 </dev/null
+```
+<h4>2.4.删除网络接口文件</h4>
+```
+[root@oel1:/root]# rm -rf /var/tmp/.oracle
+[root@oel2:/root]# rm -rf /var/tmp/.oracle
+[root@oel2:/root]# rm -rf /tmp/.oracle/
+[root@oel1:/root]# rm -rf /tmp/.oracle/
+```
+<h4>2.5.重启系统</h4>
+```
+[root@oel1:/root]# shutdown -ry 0
+[root@oel2:/root]# shutdown -ry 0
+```
+<h3>3.安装Grid Infrastructure</h3>
+以grid用户执行安装
+export CVUQDISK_GRP=oinstall
+```
+#安装前检查：
+[grid@oel1:/u01/worktmp/11gr2/grid]$ ./runcluvfy.sh stage -pre crsinst \
+-n oel1,oel2 -fixup -fixupdir /home/grid/ -verbose
+```
+以root用户执行输出脚本
+```
+#安装步骤：
+[grid@oel1:/u01/worktmp/11gr2/grid]$ ./runInstaller
+Download Software Update:Skip
+Select Installation Option: Install and Configure Grid Infrastructure for a Cluster
+Select Installation Type:Advanced Installation
+Select Product Language: English & Simplified Chinese
+Grid Plug and Play Information:
+	Cluster Name:orcl
+	SCAN Name:rac-scan
+	SCAN port:1521
+Cluster Node Information: refer to /etc/hosts
+Specify Network Interface Usage:
+Storage Option Information:ASM
+Create ASM Disk Group:
+	DG Name:CRS
+	Redundency:Normal
+	Change Discovery Path:/dev/oracleasm/disks/*
+Specify ASM Password:
+Failure Isolation Support: Do not use IPMI
+Privileged OS Group:default
+Specify Installation Home:
+	Oracle Base:/u01/app/grid
+	Software Location:/u01/app/11gr2/grid
+```
+安装完成以root用户执行/u01/app/11gr2/grid/root.sh脚本。脚本完成后，11gr2的高可用服务(CRS，CSS及EVMD)就起来了。
+```
+#确认GI集群状态：
+[grid@oel1:/worktmp/11g/grid]$ crsctl query crs activeversion
+Oracle Clusterware active version on the cluster is [11.2.0.4.0]
+[grid@oel1:/worktmp/11g/grid]$ crsctl query crs softwareversion
+Oracle Clusterware version on node [oel1] is [11.2.0.4.0]
+[grid@oel1:/worktmp/11g/grid]$ ocrcheck
+Status of Oracle Cluster Registry is as follows :
+         Version                  :          3
+         Total space (kbytes)     :     262120
+         Used space (kbytes)      :       2832
+         Available space (kbytes) :     259288
+         ID                       : 1417014589
+         Device/File Name         :       +CRS
+                                    Device/File integrity check succeeded
+
+                                   Device/File not configured
+
+                                   Device/File not configured
+
+                                   Device/File not configured
+
+                                   Device/File not configured
+
+        Cluster registry integrity check succeeded
+
+        Logical corruption check bypassed due to non-privileged user
+[grid@oel1:/worktmp/11g/grid]$ crsctl query css votedisk
+##  STATE    File Universal Id                File Name Disk group
+--  -----    -----------------                --------- ---------
+ 1. ONLINE   3756bd45b9214f22bf4f45e87da09fa8 (/dev/oracleasm/disks/OCR1) [CRS]
+ 2. ONLINE   2968da754a974fc1bf86b19fb18afad5 (/dev/oracleasm/disks/OCR2) [CRS]
+ 3. ONLINE   2e7ea902e0514f97bf258b70d975a9b6 (/dev/oracleasm/disks/OCR3) [CRS]
+Located 3 voting disk(s).
+[root@oel1:/root]# /u01/app/11gr2/grid/bin/crsctl stat res -t
+[root@oel1:/root]# /u01/app/11gr2/grid/bin/crsctl check cluster -all
+**************************************************************
+oel1:
+CRS-4537: Cluster Ready Services is online
+CRS-4529: Cluster Synchronization Services is online
+CRS-4533: Event Manager is online
+**************************************************************
+oel2:
+CRS-4537: Cluster Ready Services is online
+CRS-4529: Cluster Synchronization Services is online
+CRS-4533: Event Manager is online
+**************************************************************
+[root@oel1:/root]# /u01/app/11gr2/grid/bin/crsctl check ctss
+CRS-4701: The Cluster Time Synchronization Service is in Active mode.
+CRS-4702: Offset (in msec): 0
+```
+```
+#确认集群状态无误后查看监听配置情况：
+[grid@oel2:/home/grid]$ srvctl config listener -l listener
+Name: LISTENER
+Network: 1, Owner: grid
+Home: <crs home>
+End points: TCP:1521
+[grid@oel2:/home/grid]$ crs_stat -t
+Name           Type           Target    State     Host
+------------------------------------------------------------
+ora....ER.lsnr ora....er.type ONLINE    ONLINE    oel1
+ora....N1.lsnr ora....er.type ONLINE    ONLINE    oel2
+ora....N2.lsnr ora....er.type ONLINE    ONLINE    oel1
+ora....N3.lsnr ora....er.type ONLINE    ONLINE    oel1
+ora.OCR.dg     ora....up.type ONLINE    ONLINE    oel1
+ora.asm        ora.asm.type   ONLINE    ONLINE    oel1
+ora.cvu        ora.cvu.type   ONLINE    ONLINE    oel1
+ora.gsd        ora.gsd.type   OFFLINE   OFFLINE
+ora....network ora....rk.type ONLINE    ONLINE    oel1
+ora.oc4j       ora.oc4j.type  ONLINE    ONLINE    oel1
+ora....SM1.asm application    ONLINE    ONLINE    oel1
+ora....L1.lsnr application    ONLINE    ONLINE    oel1
+ora.oel1.gsd   application    OFFLINE   OFFLINE
+ora.oel1.ons   application    ONLINE    ONLINE    oel1
+ora.oel1.vip   ora....t1.type ONLINE    ONLINE    oel1
+ora....SM2.asm application    ONLINE    ONLINE    oel2
+ora....L2.lsnr application    ONLINE    ONLINE    oel2
+ora.oel2.gsd   application    OFFLINE   OFFLINE
+ora.oel2.ons   application    ONLINE    ONLINE    oel2
+ora.oel2.vip   ora....t1.type ONLINE    ONLINE    oel2
+ora.ons        ora.ons.type   ONLINE    ONLINE    oel1
+ora....ry.acfs ora....fs.type ONLINE    ONLINE    oel1
+ora.scan1.vip  ora....ip.type ONLINE    ONLINE    oel2
+ora.scan2.vip  ora....ip.type ONLINE    ONLINE    oel1
+ora.scan3.vip  ora....ip.type ONLINE    ONLINE    oel1
+[grid@oel2:/home/grid]$ crsctl stat res -t
+--------------------------------------------------------------------------------
+NAME           TARGET  STATE        SERVER                   STATE_DETAILS
+--------------------------------------------------------------------------------
+Local Resources
+--------------------------------------------------------------------------------
+ora.LISTENER.lsnr
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.OCR.dg
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.asm
+               ONLINE  ONLINE       oel1                     Started
+               ONLINE  ONLINE       oel2                     Started
+ora.gsd
+               OFFLINE OFFLINE      oel1
+               OFFLINE OFFLINE      oel2
+ora.net1.network
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.ons
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.registry.acfs
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+--------------------------------------------------------------------------------
+Cluster Resources
+--------------------------------------------------------------------------------
+ora.LISTENER_SCAN1.lsnr
+      1        ONLINE  ONLINE       oel2
+ora.LISTENER_SCAN2.lsnr
+      1        ONLINE  ONLINE       oel1
+ora.LISTENER_SCAN3.lsnr
+      1        ONLINE  ONLINE       oel1
+ora.cvu
+      1        ONLINE  ONLINE       oel1
+ora.oc4j
+      1        ONLINE  ONLINE       oel1
+ora.oel1.vip
+      1        ONLINE  ONLINE       oel1
+ora.oel2.vip
+      1        ONLINE  ONLINE       oel2
+ora.scan1.vip
+      1        ONLINE  ONLINE       oel2
+ora.scan2.vip
+      1        ONLINE  ONLINE       oel1
+ora.scan3.vip
+      1        ONLINE  ONLINE       oel1
+[grid@oel2:/home/grid]$
+```
+	以上为整个GI集群状态。
+<h3>4.迁移10g ASM磁盘组</h3>
+将原来数据文件存放的ASM磁盘迁移至11gr2 GI管理。先用grid用户调用asmca，利用asmca挂载原有磁盘组DATA1，这样，DATA1磁盘组就能自动在GI里面注册了。
+```
+[grid@oel1:/home/grid]$ asmca
+```
+<p>{% img /images/asmca.png %}</p>
+```
+#查看ASM磁盘组状态，以grid用户调用SQLPLUS：
+SQL> col path for a30
+SQL> col instance_name for a10
+SQL> select name,state,type,total_mb,free_mb
+from gv$asm_diskgroup;
+NAME                           STATE       TYPE     TOTAL_MB    FREE_MB
+------------------------------ ----------- ------ ---------- ----------
+OCR                            MOUNTED     NORMAL       3057       2131
+DATA                           MOUNTED     EXTERN       8189       6918
+OCR                            MOUNTED     NORMAL       3057       2131
+DATA                           MOUNTED     EXTERN       8189       6918
+SQL> select group_number,path,state,total_mb,free_mb
+from v$asm_disk;
+GROUP_NUMBER PATH                           STATE      TOTAL_MB    FREE_MB
+------------ ------------------------------ -------- ---------- ----------
+           1 /dev/oracleasm/disks/OCR3      NORMAL         1019        710
+           1 /dev/oracleasm/disks/OCR2      NORMAL         1019        710
+           1 /dev/oracleasm/disks/OCR1      NORMAL         1019        711
+           2 /dev/oracleasm/disks/DATA1      NORMAL         8189       6919
+
+
+#从inventory删除旧的crs home。Detach Old CRS home from Inventory
+[grid@oel1:/worktmp/11g/grid]$  /u01/app/oracle/product/crs/oui/bin/runInstaller \
+-detachHome -silent -local ORACLE_HOME=/u01/app/oracle/product/crs
+Starting Oracle Universal Installer...
+No pre-requisite checks found in oraparam.ini, no system pre-requisite checks will be executed.
+The inventory pointer is located at /etc/oraInst.loc
+The inventory is located at /u01/app/oracle/oraInventory
+'DetachHome' was successful.
+```
+<h3>5.升级10g数据库
+<h4>5.1.安装11gr2 Database软件</h4></h3>
+以oracle用户安装11gr2软件至NEW ORACLE_HOME目录，建议的做法是备份原先的profile，重新使用新的profile，主要修改ORACLE_HOME变量：
+```
+[oracle@oel1:/home/oracle]$ cp .bash_profile .profile
+export EDITOR=vi
+# User specific environment and startup programs
+PATH=$PATH:$HOME/bin
+export ORACLE_BASE=/u01/app/oracle
+#export ORA_CRS_HOME=$ORACLE_BASE/product/crs
+#export ORACLE_HOME=$ORACLE_BASE/product/10.2.0/db_1
+export ORACLE_HOME=$ORACLE_BASE/product/11.2.0/db_1
+export ORACLE_SID=orcl1
+export PATH=.:${PATH}:$HOME/bin:$ORACLE_BASE/product/crs/bin:$ORACLE_HOME/bin
+export PATH=${PATH}:/usr/bin:/bin:/usr/bin/X11:/usr/local/bin
+export PATH=${PATH}:$ORACLE_BASE/common/oracle/bin:$ORACLE_BASE/product/crs/bin
+export ORACLE_TERM=xterm
+export TNS_ADMIN=$ORACLE_HOME/network/admin
+#export ORA_NLS10=$ORACLE_HOME/nls/data
+export ORA_NLS11=$ORACLE_HOME/nls/data
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$ORACLE_HOME/oracm/lib
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/lib:/usr/lib:/usr/local/lib
+export CLASSPATH=$ORACLE_HOME/JRE
+export CLASSPATH=${CLASSPATH}:$ORACLE_HOME/jlib
+export CLASSPATH=${CLASSPATH}:$ORACLE_HOME/rdbms/jlib
+export CLASSPATH=${CLASSPATH}:$ORACLE_HOME/network/jlib
+export THREADS_FLAG=native
+export TEMP=/tmp
+export TMPDIR=/tmp
+export DISPLAY=192.168.56.1:0.0
+export PS1='[$LOGNAME@$HOSTNAME:$PWD]$ '
+umask 022
+```
+```
+#安装步骤如下：
+[oracle@oel1:/u01/worktmp/11gr2/database]$ ./runInstaller
+Configure Security Updates：None
+Down Software Updates：Skip software updates
+Installation Option：Install Database software only
+Grid Installation Option：select ALL NODES
+Product Language：English & Simplified Chinese
+Installation Location：
+	ORACLE_BASE：/u01/app/oracle
+	ORACLE_HOME：/u01/app/oracle/product/11.2.0/db_1
+Operating System Groups：
+	OSDBA：dba
+	OSOPER：NONE
+```
+安装完成后，两个节点复制相关到11G目录下
+```
+[root@oel2:/root]# cp /u01/app/oracle/product/10.2.0/db_1/network/admin/tnsnames.ora /u01/app/oracle/product/11.2.0/db_1/network/admin/
+[root@oel1:/root]# cp /u01/app/oracle/product/10.2.0/db_1/network/admin/tnsnames.ora /u01/app/oracle/product/11.2.0/db_1/network/admin/
+[oracle@oel1:/home/oracle]$ scp /u01/app/oracle/product/10.2.0/db_1/dbs/orapworcl1 $ORACLE_HOME/dbs
+[oracle@oel2:/home/oracle]$ scp /u01/app/oracle/product/10.2.0/db_1/dbs/orapworcl2 $ORACLE_HOME/dbs
+```
+<h4>5.2.手工升级数据库</h4>
+修改初始化文件，由于10G的rac spfile在共享磁盘上，因此，先需要从ASM中复制到文件系统，这一步可以在停止CRS前做。
+```
+[grid@oel2:/home/grid]$ asmcmd -p
+ASMCMD [+] > ls
+CRS/
+DATA/
+ASMCMD [+] > cd data
+ASMCMD [+data] > ls
+ORCL/
+arch/
+ASMCMD [+data] > cd orcl
+ASMCMD [+data/orcl] > ls
+ARCHIVELOG/
+CONTROLFILE/
+DATAFILE/
+ONLINELOG/
+PARAMETERFILE/
+TEMPFILE/
+spfileorcl.ora
+ASMCMD [+data/orcl] > cp spfileorcl.ora /tmp
+copying +data/orcl/spfileorcl.ora -> /tmp/spfileorcl.ora
+SQL> create pfile='/tmp/init.ora' from spfile='/tmp/spfileorcl.ora';
+File created.
+```
+移除11g废弃参数，如background_dump_dest，user_dump_dest等，改为11g的diagnostic_dest。修改版本兼容号compatible，修改cluster_database=false。屏蔽掉监听参数。修改后对比如下：
+```
+[oracle@oel1:/home/oracle]$ cat /u01/app/oracle/product/11.2.0/db_1/dbs/initorcl1.ora
+orcl2.__db_cache_size=427819008
+orcl1.__db_cache_size=427819008
+orcl2.__java_pool_size=4194304
+orcl1.__java_pool_size=4194304
+orcl2.__large_pool_size=4194304
+orcl1.__large_pool_size=4194304
+orcl2.__shared_pool_size=155189248
+orcl1.__shared_pool_size=155189248
+orcl2.__streams_pool_size=0
+orcl1.__streams_pool_size=0
+*.audit_file_dest='/u01/app/oracle/admin/orcl/adump'
+#*.background_dump_dest='/u01/app/oracle/admin/orcl/bdump'
+*.cluster_database_instances=2
+#*.cluster_database=true
+*.cluster_database=false
+#*.compatible='10.2.0.3.0'
+*.compatible='11.2.0.0.0'
+*.control_files='+DATA/orcl/controlfile/current.256.844116025'
+*.core_dump_dest='/u01/app/oracle/admin/orcl/cdump'
+*.db_block_size=8192
+*.db_create_file_dest='+DATA'
+*.db_domain=''
+*.db_file_multiblock_read_count=16
+*.db_name='orcl'
+orcl2.instance_number=2
+orcl1.instance_number=1
+*.job_queue_processes=10
+*.log_archive_dest_1='LOCATION=+DATA/arch'
+*.log_archive_format='%t_%s_%r.dbf'
+*.open_cursors=300
+*.pga_aggregate_target=199229440
+*.processes=150
+#*.remote_listener='LISTENERS_ORCL'
+*.remote_login_passwordfile='exclusive'
+*.sga_target=597688320
+orcl2.thread=2
+orcl1.thread=1
+*.undo_management='AUTO'
+orcl1.undo_tablespace='UNDOTBS1'
+orcl2.undo_tablespace='UNDOTBS2'
+#*.user_dump_dest='/u01/app/oracle/admin/orcl/udump'
+*.diagnostic_dest='/u01/app/oracle'
+```
+添加11g HOME目录到/etc/oratab
+orcl:/u01/app/oracle/product/11.2.0/db_1:N
+```
+#开始手工升级：
+[oracle@oel1:/home/oracle]$ export ORACLE_SID=orcl1
+[oracle@oel1:/home/oracle]$ export ORACLE_HOME=$ORACLE_BASE/product/11.2.0/db_1
+[oracle@oel1:/home/oracle]$ which sqlplus
+/u01/app/oracle/product/11.2.0/db_1/bin/sqlplus
+[oracle@oel1:/home/oracle]$ sqlplus "/as sysdba"
+SQL*Plus: Release 11.2.0.4.0 Production on Sun Apr 6 18:26:19 2014
+Copyright (c) 1982, 2013, Oracle.  All rights reserved.
+Connected to an idle instance.
+SQL> startup upgrade
+ORACLE instance started.
+Total System Global Area  597098496 bytes
+Fixed Size                  2255552 bytes
+Variable Size             176162112 bytes
+Database Buffers          415236096 bytes
+Redo Buffers                3444736 bytes
+Database mounted.
+Database opened.
+SQL> spool upgrade.log
+SQL> @?/rdbms/admin/catupgrd.sql
+```
+在run上述脚本时候报了一个错误：
+```
+SELECT TO_NUMBER('MUST_HAVE_RUN_PRE-UPGRADE_TOOL_FOR_TIMEZONE')
+                 *
+ERROR at line 1:
+ORA-01722: invalid number
+```
+为timezone的问题，MOS上解决方法，ID 1466464.1：
+```
+SQL> CREATE TABLE registry$database(
+           platform_id   NUMBER,
+           platform_name VARCHAR2(101),
+           edition       VARCHAR2(30),
+           tz_version    NUMBER
+           );
+Table created.
+SQL> truncate table registry$database;
+Table truncated.
+SQL> INSERT into registry$database
+  (platform_id, platform_name, edition, tz_version)
+VALUES
+  ((select platform_id from v$database),
+   (select platform_name from v$database),
+   NULL,
+   (select version from v$timezone_file));
+1 row created.
+SQL> commit;
+SQL> col PLATFORM_NAME for a30
+SQL> select * from sys.registry$database;
+PLATFORM_ID PLATFORM_NAME              EDITION                        TZ_VERSION
+----------- -------------------------- ------------------------------ ----------
+         13 Linux x86 64-bit                                                  14
+```
+再次执行升级脚本：
+```
+SQL> spool upgrade.log
+SQL> @?/rdbms/admin/catupgrd.sql
+```
+升级完后，会自动关闭数据库，以正常模式启动数据库，并执行以下查询：
+```
+SQL> set lines 200;
+SQL> set pages 1000;
+SQL> column comp_name format a40;
+SQL> column version format a12;
+SQL> column status format a15;
+SQL> select comp_name, version, status from dba_registry;
+COMP_NAME                                VERSION      STATUS
+---------------------------------------- ------------ ---------------
+Oracle Workspace Manager                 11.2.0.4.0   VALID
+Oracle Database Catalog Views            11.2.0.4.0   VALID
+Oracle Database Packages and Types       11.2.0.4.0   VALID
+Oracle Real Application Clusters         11.2.0.4.0   VALID
+SQL> @?/rdbms/admin/utlu112s
+.
+Oracle Database 11.2 Post-Upgrade Status Tool           04-06-2014 19:29:05
+.
+Component                               Current      Version     Elapsed Time
+Name                                    Status       Number      HH:MM:SS
+.
+Oracle Server
+.                                         VALID      11.2.0.4.0  00:41:01
+Oracle Real Application Clusters
+.                                         VALID      11.2.0.4.0  00:00:02
+Oracle Workspace Manager
+.                                         VALID      11.2.0.4.0  00:01:29
+Final Actions
+.                                                                00:02:03
+Total Upgrade Time: 00:44:38
+
+PL/SQL procedure successfully completed.
+
+#执行脚本catuppst，This script will migrate the Baseline data on a pre-11g database to the 11g database.
+SQL>  @?/rdbms/admin/catuppst.sql
+#编译非法对象
+SQL> spool recompile.log
+SQL>  @?/rdbms/admin/utlrp.sql
+#关闭数据库，修改参数文件，改为集群模式
+*.cluster_database='true'
+*.remote_listener='rac-sca:1521'
+```
+重启数据库，创建spfile，同时修改initorcl1.ora为以下内容：
+```
+SQL> create spfile='+DATA/orcl/spfileorcl.ora' from pfile;
+[oracle@oel1:/home/oracle]$ cat /u01/app/oracle/product/11.2.0/db_1/dbs/initorcl1.ora
+SPFILE='+DATA/orcl/spfileorcl.ora'
+#节点2拷贝
+[oracle@oel2:/home/oracle]$ cp /u01/app/oracle/product/10.2.0/db_1/dbs/initorcl2.ora $ORACLE_HOME/dbs/
+[oracle@oel2:/home/oracle]$ cat $ORACLE_HOME/dbs/initorcl2.ora
+SPFILE='+DATA/orcl/spfileorcl.ora'
+SQL> show parameter spfile
+
+NAME                                 TYPE        VALUE
+------------------------------------ ----------- ------------------------------
+spfile                               string      +DATA/orcl/spfileorcl.ora
+```
+```
+#关闭数据库，添加升级好的11g RAC到GI集群：
+[oracle@oel1:/home/oracle]$ srvctl add database -d orcl -m kkdba.com \
+-o /u01/app/oracle/product/11.2.0/db_1 -p +data/orcl/spfileorcl.ora -y AUTOMATIC
+[oracle@oel1:/home/oracle]$ srvctl add instance -d orcl -i orcl1 -n oel1
+[oracle@oel1:/home/oracle]$ srvctl add instance -d orcl -i orcl2 -n oel2
+[oracle@oel1:/home/oracle]$ srvctl modify database -d orcl -n orcl
+[oracle@oel1:/home/oracle]$ srvctl config database -d orcl -a
+Database unique name: orcl
+Database name: orcl
+Oracle home: /u01/app/oracle/product/11.2.0/db_1
+Oracle user: oracle
+Spfile: +data/orcl/spfileorcl.ora
+Domain: kkdba.com
+Start options: open
+Stop options: immediate
+Database role: PRIMARY
+Management policy: AUTOMATIC
+Server pools: orcl
+Database instances: orcl1,orcl2
+Disk Groups:
+Mount point paths:
+Services:
+Type: RAC
+Database is enabled
+Database is administrator managed
+```
+```
+#节点2 Detach 10g CRS_HOME
+[oracle@oel2:/home/oracle]$ /u01/app/oracle/product/crs/oui/bin/runInstaller \
+-detachHome -silent -local ORACLE_HOME=/u01/app/oracle/product/crs
+Starting Oracle Universal Installer...
+No pre-requisite checks found in oraparam.ini, no system pre-requisite checks will be executed.
+The inventory pointer is located at /etc/oraInst.loc
+The inventory is located at /u01/app/oracle/oraInventory
+'DetachHome' was successful.
+```
+通过srvctl启动集群数据库，并查看状态：
+```
+[oracle@oel1:/home/oracle]$ srvctl start database -d orcl
+[grid@oel1:/home/grid]$ crsctl stat res -t
+--------------------------------------------------------------------------------
+NAME           TARGET  STATE        SERVER                   STATE_DETAILS
+--------------------------------------------------------------------------------
+Local Resources
+--------------------------------------------------------------------------------
+ora.CRS.dg
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.DATA.dg
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.LISTENER.lsnr
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.asm
+               ONLINE  ONLINE       oel1                     Started
+               ONLINE  ONLINE       oel2                     Started
+ora.gsd
+               OFFLINE OFFLINE      oel1
+               OFFLINE OFFLINE      oel2
+ora.net1.network
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.ons
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+ora.registry.acfs
+               ONLINE  ONLINE       oel1
+               ONLINE  ONLINE       oel2
+--------------------------------------------------------------------------------
+Cluster Resources
+--------------------------------------------------------------------------------
+ora.LISTENER_SCAN1.lsnr
+      1        ONLINE  ONLINE       oel2
+ora.LISTENER_SCAN2.lsnr
+      1        ONLINE  ONLINE       oel1
+ora.LISTENER_SCAN3.lsnr
+      1        ONLINE  ONLINE       oel1
+ora.cvu
+      1        ONLINE  ONLINE       oel1
+ora.oc4j
+      1        ONLINE  ONLINE       oel1
+ora.oel1.vip
+      1        ONLINE  ONLINE       oel1
+ora.oel2.vip
+      1        ONLINE  ONLINE       oel2
+ora.orcl.db
+      1        ONLINE  ONLINE       oel1                     Open
+      2        ONLINE  ONLINE       oel2                     Open
+ora.scan1.vip
+      1        ONLINE  ONLINE       oel2
+ora.scan2.vip
+      1        ONLINE  ONLINE       oel1
+ora.scan3.vip
+      1        ONLINE  ONLINE       oel1
+[grid@oel1:/home/grid]$ crs_stat -t
+Name           Type           Target    State     Host
+------------------------------------------------------------
+ora.CRS.dg     ora....up.type ONLINE    ONLINE    oel1
+ora.DATA.dg    ora....up.type ONLINE    ONLINE    oel1
+ora....ER.lsnr ora....er.type ONLINE    ONLINE    oel1
+ora....N1.lsnr ora....er.type ONLINE    ONLINE    oel2
+ora....N2.lsnr ora....er.type ONLINE    ONLINE    oel1
+ora....N3.lsnr ora....er.type ONLINE    ONLINE    oel1
+ora.asm        ora.asm.type   ONLINE    ONLINE    oel1
+ora.cvu        ora.cvu.type   ONLINE    ONLINE    oel1
+ora.gsd        ora.gsd.type   OFFLINE   OFFLINE
+ora....network ora....rk.type ONLINE    ONLINE    oel1
+ora.oc4j       ora.oc4j.type  ONLINE    ONLINE    oel1
+ora....SM1.asm application    ONLINE    ONLINE    oel1
+ora....L1.lsnr application    ONLINE    ONLINE    oel1
+ora.oel1.gsd   application    OFFLINE   OFFLINE
+ora.oel1.ons   application    ONLINE    ONLINE    oel1
+ora.oel1.vip   ora....t1.type ONLINE    ONLINE    oel1
+ora....SM2.asm application    ONLINE    ONLINE    oel2
+ora....L2.lsnr application    ONLINE    ONLINE    oel2
+ora.oel2.gsd   application    OFFLINE   OFFLINE
+ora.oel2.ons   application    ONLINE    ONLINE    oel2
+ora.oel2.vip   ora....t1.type ONLINE    ONLINE    oel2
+ora.ons        ora.ons.type   ONLINE    ONLINE    oel1
+ora.orcl.db    ora....se.type ONLINE    ONLINE    oel1
+ora....ry.acfs ora....fs.type ONLINE    ONLINE    oel1
+ora.scan1.vip  ora....ip.type ONLINE    ONLINE    oel2
+ora.scan2.vip  ora....ip.type ONLINE    ONLINE    oel1
+ora.scan3.vip  ora....ip.type ONLINE    ONLINE    oel1
+[oracle@oel1:/u01/app/oracle/product/10.2.0/db_1/network/admin]$ lsnrctl service
+LSNRCTL for Linux: Version 11.2.0.4.0 - Production on 06-APR-2014 22:26:50
+
+Copyright (c) 1991, 2013, Oracle.  All rights reserved.
+
+Connecting to (ADDRESS=(PROTOCOL=tcp)(HOST=)(PORT=1521))
+Services Summary...
+Service "+ASM" has 1 instance(s).
+  Instance "+ASM1", status READY, has 1 handler(s) for this service...
+    Handler(s):
+      "DEDICATED" established:0 refused:0 state:ready
+         LOCAL SERVER
+Service "orcl" has 1 instance(s).
+  Instance "orcl1", status READY, has 1 handler(s) for this service...
+    Handler(s):
+      "DEDICATED" established:0 refused:0 state:ready
+         LOCAL SERVER
+The command completed successfully
+```

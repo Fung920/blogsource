@@ -1,0 +1,473 @@
+---
+layout: post
+title: ! '[shell学习笔记]正则表达式与grep'
+categories:
+- linux
+tags:
+- shell
+published: true
+comments: false
+date: 2013-09-24
+---
+<p><h1>1.正则表达式元字符</h1>
+<!--more-->
+```
+[root@linora shell]# cat lettle 
+Hi,Tom 
+Tommy tomrrow! 
+```
+需要将以上文本的Tom改为David，需注意到，其他单词也含有tom或者Tom字样。Vi命令模式中使用%s/[Tt]om/David/g显然是不行的，它会将其他单词中含有tom字样的全部取代为David。</p>
+
+<p>正解：</p>
+
+<p>正则表达式<code>%/s/\&lt;[Tt]om\&gt;/David/g</code>达成此目的或者:<code>1,$s/\&lt;[Tt]om\&gt;/David/g</code>。</p>
+
+<p><code>:1,$s/\&lt;[Tt]om\&gt;/David/g</code></p>
+
+<p>这条vi命令的意思是，从文件的第一行到末尾，用David替换单词Tom或者tom。正则表达式元字符\&lt;和\&gt;表示单词的开始和结束（vi跟grep支持）。表1-1列出了可以在所有版本的vi、ex、grep、egrep、sed和awk中使用的正则表达式元字符。
+<p align="left"><b>表</b><b>1-1 </b><b>正则表达式元字符</b><b></b></p></p>
+
+<p><div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="67"><b>元字符</b><b></b></td>
+<td valign="top" width="192"><b>功能</b><b></b></td>
+<td valign="top" width="96"><b>示例</b><b></b></td>
+<td valign="top" width="213"><b>匹配对象</b><b></b></td>
+</tr>
+<tr>
+<td valign="top" width="67">^</td>
+<td valign="top" width="192">行首定位符</td>
+<td valign="top" width="96">/^love/</td>
+<td valign="top" width="213">匹配所有以love开头的行</td>
+</tr>
+<tr>
+<td valign="top" width="67">$</td>
+<td valign="top" width="192">行尾定位符</td>
+<td valign="top" width="96">/love$/</td>
+<td valign="top" width="213">匹配所有以love结尾的行</td>
+</tr>
+<tr>
+<td valign="top" width="67">.</td>
+<td valign="top" width="192">匹配单个字符</td>
+<td valign="top" width="96">/l..e/</td>
+<td valign="top" width="213">匹配包含一个l，后面跟两个字符，再跟一个e的行</td>
+</tr>
+<tr>
+<td valign="top" width="67">*</td>
+<td valign="top" width="192">匹配0或者多个重复的位于*前的字符</td>
+<td valign="top" width="96">/*love/</td>
+<td valign="top" width="213">匹配包含跟在0个或者多个字符后的love的行</td>
+</tr>
+<tr>
+<td valign="top" width="67">[]</td>
+<td valign="top" width="192">匹配一组字符中的任意一个</td>
+<td valign="top" width="96">/[Ll]ove/</td>
+<td valign="top" width="213">匹配Love或者love</td>
+</tr>
+<tr>
+<td valign="top" width="67">[x-y]</td>
+<td valign="top" width="192">匹配指定范围内的一个字符</td>
+<td valign="top" width="96">/[A-Z]ove/</td>
+<td valign="top" width="213">匹配后面跟着ove的一个A至Z的任意字符</td>
+</tr>
+<tr>
+<td valign="top" width="67">[^]</td>
+<td valign="top" width="192">匹配不在指定组内的字符</td>
+<td valign="top" width="96">/[^A-Z]/</td>
+<td valign="top" width="213">匹配不在范围A至Z之间的任意一个字符</td>
+</tr>
+<tr>
+<td valign="top" width="67">\</td>
+<td valign="top" width="192">转义字符</td>
+<td valign="top" width="96">/love\./</td>
+<td valign="top" width="213">匹配包含love，后面跟一个句号</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2>1.1.正则表达式范例</h2>
+<pre>I had a lovely time on our little picnic.
+Lovers were all around us. It is springtime. Oh
+love, how much I adore you. Do you know
+the extent of my love? Oh, by the way, I think
+I lost my gloves somewhere out in that field of
+clover. Did you see them?  I can only hope love
+is forever. I live for you. It's hard to get back in the
+groove.</pre>
+<!--more-->
+<b>说明:</b>
+```
+/love/ 
+```
+解析：正则表达式为love，查找到的love可能是单个单词，也有可能是lovely,gloves或者clover。 
+注：为了减少篇幅冗余，以上文本省略，只挑出vi命令行查找命令。 
+```
+/^love/ 
+```
+^为行首定义符，在上述短文中，vi只查找以love四个字符开头的行，前面不能有任何字符，包括空格。 
+```
+/love$/ 
+```
+$为行尾定义符，只查找以love结尾的行，且love后面跟着换行符。 
+/l.ve/ 
+单个字符匹配，查找结果为love和live的组合。 
+```
+/[Ll]ove/ 
+```
+方括号匹配某组字符中的一个，即vi查找包含一个L或者l后面跟着ove的正则表达式。 
+```
+/ove[a-z]/ 
+```
+方括号内的连字符表示匹配某个范围内的一个字符，即vi查找包含ove，后面接着a-z的任意一个ASCII码字符。 
+```
+/ove[^a-zA-Z0-9]/ 
+```
+
+<p>方括号内的^为否定，即上述查找表示vi查找ove开头，但后面不是接着A-Z、a-z及0-9之间的ASCII字符，如，vi可能找到ove后面接着句号，感叹号等的字符。
+<h2>1.2.复合正则表达式元字符</h2>
+<pre>   ---------------------------------------------------------------
+1  |Christian Scott lives here and will put on a Christmas party.|
+2  |There are around 30 to 35 people invited.                    |
+3  |They are:                                                    |
+4  |                                                          Tom|
+5  |Dan                                                          |
+6  |   Rhonda Savage                                             |
+7  |Nicky and Kimberly.                                          |
+8  |Steve, Suzanne, Ginger and Larry.                            |
+   ---------------------------------------------------------------</pre>
+<b>说明：</b>
+```
+/^[A-Z]..$/ 
+```
+查找文本中所有以大写字母开头，后跟两个任意字符，再跟一个换行符的行，查找结果是第五行的Dan。 
+```
+/^[A-Z][a-z ]*3[0-5]/ 
+```
+查找所有以大写字母开头，后面跟0个或者多个小写字母或空格，再跟数字3和一个0~5之间的数字的行。查找结果是第二行。 
+```
+/[a-z]* \./ 
+```
+查找包含跟在0个或多个小写字母后的句点的行。结果是第1、2、7、8行。 
+```
+/^ *[A-Z][a-z][a-z]$/ 
+```
+查找0个或者多个空格开头，后跟一个大写字母、两个小写字母跟换行符的行。结果是第四行及第五行。 
+```
+/^[A-Za-z]*[^,][A-Za-z]*$/ 
+```
+查找以0个或者多个大小写字母开头，后面跟一个非逗号的字符，再跟0个或者多个大小写字母和一个换行符的行。结果是第五行。
+<h2>1.3.其他正则表达式元字符</h2>
+<pre>Unusual occurrences happened at the fair.
+Patty won fourth place in the 50 yard dash square and fair.
+Occurrences like this are rare.
+The winning ticket is 55222.
+The ticket I got is 54333 and Dee got 55544.
+Guy fell down while running around the south bend in his last event.</pre>
+<b>说明：</b>
+```
+/\<fourth\>/  
+```
+	查找出每一行的单词fourth。\<是词首定位符，\>是词尾定位符。 
+```
+/\<f.*th\>/ 
+```
+	查找以f开头、后跟0个或者多个任意字符，再跟以th结尾的字符穿的任意单词。 
+```
+:1,$s/\([Oo]ccur\)ence/\1rence 
+```
+	上面取代例子采用\(和\)记录模式，编辑器查找完整的字符串[Oo]ccurence。如果找到了，就把圆括号中的这部分模式加上标签(即将occur或者Occur标记)。这是第一个被标记的地方（最多可标记9个），因此被称为标签1.这个模式被保存在标记为1的内存寄存器中。执行替换时候，将\1替换为寄存器的内容，然后加上单词的剩余部分rence。这样，开始时的occurence被替换为occurrence。 
+```
+:s/\(square\) and \(fair\)/\2 and \1 
+```
+	编辑器查找正则表达式square and fair，将square标记为标签1，fair标记为标签2。执行替换时候，\1被寄存器1的内容替换，\2被寄存器2的内容替换，最后结果为fair and square。 
+```
+/5\{2\}2\{3\}\./ 
+```
+	模式的重复\{n\},表示查找含有两个数字5，后面接三个数字2，最后接一个句点的行。</p>
+
+<p><h1>2.grep</h1>
+grep表示全局查找正则表达式并且打印结果行(global search regular expression and print out the line)。 
+ 使用grep的好处在于，不需要启动编辑器就可以执行查找操作，也不用把正则表达式括在正斜杠里。使用grep比vi快得多。 
+      grep命令在一个或者多个文件中查找某个字符模式，如果这个模式中包含空格，就必须用引号把它括起来。
+<b>命令格式</b><b>：</b>
+<pre>grep oracle /etc/passwd</pre>
+      如果发现了要查找的模式，grep返回的退出状态为0，如果没找到，返回的退出状态为1，如果找不到指定文件，退出状态是2.
+<h2>2.1.  grep中的元字符</h2>
+<p align="left"><b>表</b><b>2-1 grep</b><b>使用的正则表达式元字符</b><b></b></p></p>
+
+<p><div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="79"><b>元字符</b><b></b></td>
+<td valign="top" width="166"><b>功能</b><b></b></td>
+<td valign="top" width="124"><b>示例</b><b></b></td>
+<td valign="top" width="199"><b>匹配对象</b><b></b></td>
+</tr>
+<tr>
+<td valign="top" width="79">^</td>
+<td valign="top" width="166">行首定位符</td>
+<td valign="top" width="124">'^love'</td>
+<td valign="top" width="199">匹配所有以love开头的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">$</td>
+<td valign="top" width="166">行尾定位符</td>
+<td valign="top" width="124">'love$'</td>
+<td valign="top" width="199">匹配所有以love结尾的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">.</td>
+<td valign="top" width="166">匹配单个字符</td>
+<td valign="top" width="124">'l..e'</td>
+<td valign="top" width="199">匹配包含一个l，后面跟两个字符，再跟一个e的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">*</td>
+<td valign="top" width="166">匹配0或者多个重复的位于*前的字符</td>
+<td valign="top" width="124">'*love'</td>
+<td valign="top" width="199">匹配包含跟在0个或者多个字符后的love的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">[]</td>
+<td valign="top" width="166">匹配一组字符中的任意一个</td>
+<td valign="top" width="124">'[Ll]ove'</td>
+<td valign="top" width="199">匹配Love或者love</td>
+</tr>
+<tr>
+<td valign="top" width="79">[^]</td>
+<td valign="top" width="166">匹配不在指定组内的字符</td>
+<td valign="top" width="124">'[^A-Z]'</td>
+<td valign="top" width="199">匹配不在范围A至Z之间的任意一个字符</td>
+</tr>
+<tr>
+<td valign="top" width="79">\&lt;</td>
+<td valign="top" width="166">词首定位符</td>
+<td valign="top" width="124">'\&lt;love'</td>
+<td valign="top" width="199">匹配包含以love开头的词的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">\&lt;</td>
+<td valign="top" width="166">词尾定位符</td>
+<td valign="top" width="124">'love/&gt;'</td>
+<td valign="top" width="199">匹配包含以love结尾的词的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">\(..\)</td>
+<td valign="top" width="166">标记匹配到的字符</td>
+<td valign="top" width="124">'\(love\)ing'</td>
+<td valign="top" width="199">模式love被保存在1号寄存器中，之后可用\1引用它</td>
+</tr>
+<tr>
+<td valign="top" width="79">x\{m\}或x\{m,\}或x\{m,n\}</td>
+<td valign="top" width="166">字符x的重复次数：m次、至少m次、至少m次但不超过n次</td>
+<td valign="top" width="124">'o\{5\}','o\{5,\}'</p>,'o\{5,10\}'</td>
+<td valign="top" width="199">匹配连续出现5个o、至少5个o或者5~10个o的行</td></tr></tbody></table></div></p>
+
+
+
+
+<p align="left"><b>表</b><b>2-2 grep</b><b>的选项</b><b></b></p></p>
+
+<p><table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="91"><b>选项</b><b></b></td>
+<td valign="top" width="477"><b>功能</b><b></b></td>
+</tr>
+<tr>
+<td valign="top" width="91">-b</td>
+<td valign="top" width="477">在每一行前面加上其所在的块号，根据上下文定位磁盘时可能会用到</td>
+</tr>
+<tr>
+<td valign="top" width="91">-c</td>
+<td valign="top" width="477">只显示匹配到的行的数目，而不显示行的内容</td>
+</tr>
+<tr>
+<td valign="top" width="91">-h</td>
+<td valign="top" width="477">不显示文件名</td>
+</tr>
+<tr>
+<td valign="top" width="91">-i</td>
+<td valign="top" width="477">忽略大小写</td>
+</tr>
+<tr>
+<td valign="top" width="91">-l</td>
+<td valign="top" width="477">只列出匹配行所在文件的文件名，文件名之间用换行符分隔</td>
+</tr>
+<tr>
+<td valign="top" width="91">-n</td>
+<td valign="top" width="477">在每一行前面加上它所在文件中的相对行号</td>
+</tr>
+<tr>
+<td valign="top" width="91">-s</td>
+<td valign="top" width="477">Silent mode，即只显示报错信息，以检查退出状态</td>
+</tr>
+<tr>
+<td valign="top" width="91">-v</td>
+<td valign="top" width="477">反向查找，只显示不匹配的行</td>
+</tr>
+<tr>
+<td valign="top" width="91">-w</td>
+<td valign="top" width="477">把表达式作为单词查找，就好像他被\&lt;和\&gt;所包含一样</td>
+</tr>
+</tbody>
+</table>
+<h2>2.2.grep的退出状态</h2>
+grep在shell脚本中很有用，它总会返回一个退出状态，但是sed及awk是不使用退出状态来说明查找模式是否成功的。例如： 
+```
+[root@linora shell]# grep -s oracle /etc/passwdddsf 
+[root@linora shell]# echo $? 
+2
+[root@linora shell]# grep fung /etc/passwd 
+[root@linora shell]# echo $? 
+1
+```
+对于在bash及ksh中的变量“?”的值都是上一条命令执行后的退出状态。
+<h2>2.3.grep与pipe</h2>
+```
+[root@linora shell]# ls -l 
+total 12 
+drwxr-xr-x 2 root root 4096 Sep 24 01:22 dir1 
+drwxr-xr-x 2 root root 4096 Sep 24 01:22 dir2 
+-rw-r--r-- 1 root root   23 Sep 23 18:44 lettle 
+[root@linora shell]# ls -l |grep '^d' 
+drwxr-xr-x 2 root root 4096 Sep 24 01:22 dir1 
+drwxr-xr-x 2 root root 4096 Sep 24 01:22 dir2 
+```
+<b>说明：</b>
+ls命令的输出通过pipe传给grep。输出结果中以字母d开头的所有行都被打印出来，及上述命令打印当前目录下所有子目录。
+<h1>3.egrep</h1>
+egrep的好处是它在grep提供的正则表达式元字符集的基础上增加了很多元字符，但是egrep不允许\{\}和\(\)。同时egrep参数跟grep参数用法相同。
+<p align="left"><b>表</b><b>3-1     egrep</b><b>使用的正则表达式元字符</b><b></b></p></p>
+
+<p><div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="79"><b>元字符</b><b></b></td>
+<td valign="top" width="166"><b>功能</b><b></b></td>
+<td valign="top" width="124">示例</td>
+<td valign="top" width="199"><b>匹配对象</b><b></b></td>
+</tr>
+<tr>
+<td valign="top" width="79">^</td>
+<td valign="top" width="166">行首定位符</td>
+<td valign="top" width="124">'^love'</td>
+<td valign="top" width="199">匹配所有以love开头的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">$</td>
+<td valign="top" width="166">行尾定位符</td>
+<td valign="top" width="124">'love$'</td>
+<td valign="top" width="199">匹配所有以love结尾的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">.</td>
+<td valign="top" width="166">匹配单个字符</td>
+<td valign="top" width="124">'l..e'</td>
+<td valign="top" width="199">匹配包含一个l，后面跟两个字符，再跟一个e的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">*</td>
+<td valign="top" width="166">匹配0或者多个重复的位于*前的字符</td>
+<td valign="top" width="124">'*love'</td>
+<td valign="top" width="199">匹配包含跟在0个或者多个字符后的love的行</td>
+</tr>
+<tr>
+<td valign="top" width="79">[]</td>
+<td valign="top" width="166">匹配一组字符中的任意一个</td>
+<td valign="top" width="124">'[Ll]ove'</td>
+<td valign="top" width="199">匹配Love或者love</td>
+</tr>
+<tr>
+<td valign="top" width="79">[^]</td>
+<td valign="top" width="166">匹配不在指定组内的字符</td>
+<td valign="top" width="124">'[^A-Z]'</td>
+<td valign="top" width="199">匹配不在范围A至Z之间的任意一个字符</td>
+</tr>
+<tr>
+<td valign="top" width="79">+</td>
+<td valign="top" width="166">匹配一个或者多个加号前的字符</td>
+<td valign="top" width="124">'[a-z]+ove'</td>
+<td valign="top" width="199">匹配一个或者多个小写字母后面跟ove的字符</td>
+</tr>
+<tr>
+<td valign="top" width="79">?</td>
+<td valign="top" width="166">匹配零个或者一个前导字符</td>
+<td valign="top" width="124">'lo?ve'</td>
+<td valign="top" width="199">匹配l后跟一个或者零个字母o及vd的字符，即love或者lve</td>
+</tr>
+<tr>
+<td valign="top" width="79">a|b</td>
+<td valign="top" width="166">匹配a或者b</td>
+<td valign="top" width="124">'love|hate'</td>
+<td valign="top" width="199">匹配love或hate</td>
+</tr>
+<tr>
+<td valign="top" width="79">()</td>
+<td valign="top" width="166">字符组</td>
+<td valign="top" width="124">'love(able|ly)(ov)+'</td>
+<td valign="top" width="199">匹配lovable或lovely，匹配ov的一次或者多次出现</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p align="left"><b>表</b><b>3-2     egrep</b><b>用法示例</b><b></b></p></p>
+
+<p><table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="235"><b>命令</b><b></b></td>
+<td valign="top" width="333"><b>命令执行的操作</b><b></b></td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '^ +' file</td>
+<td valign="top" width="333">打印一个或者多个空格开头的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '^ *' file</td>
+<td valign="top" width="333">打印零个或者多个空格开头的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '(Tom|Dan) Savage' file</td>
+<td valign="top" width="333">打印Tom Savage或Dan Savage的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '(ab)+' file</td>
+<td valign="top" width="333">打印一个或者多个ab的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '^X[0-9]?' file</td>
+<td valign="top" width="333">打印X开头，后面接零个或者一个数字的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep 'fun\.$' file</td>
+<td valign="top" width="333">打印<b>fun.</b>结尾的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '[A-Z]+' file</td>
+<td valign="top" width="333">打印包含一个或者多个大写字母的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '[0-9]' file</td>
+<td valign="top" width="333">打印包含数字的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '[A-Z]...[0-9]' file</td>
+<td valign="top" width="333">打印大写字母后面跟着三个任意字符最后再跟数字的行，共计五个字符</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '[tT]est' file</td>
+<td valign="top" width="333">打印包含test或Test的行</td>
+</tr>
+<tr>
+<td valign="top" width="235">egrep '(Susan|Jean) Doe' file</td>
+<td valign="top" width="333">打印包含Susan Doe或Jean Doe的行</td>
+</tr>
+</tbody>
+</table></p>
+
+<p><b>EOF</b></p>

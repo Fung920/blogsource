@@ -1,0 +1,311 @@
+---
+layout: post
+title: 使用udev代替ASMlib
+categories:
+- linux
+tags:
+- asm
+- udev
+published: true
+comments: false
+date: 2013-09-06
+---
+ <h1>1.Introduction</h1>
+在Linux平台，从SAN、NAS或者SCSI设备映射过来的LUN一般识别为/dev/sdX。
+<!--more-->
+如： 
+
+```
+[root@orcl1 ~]# ll /dev/sd* 
+brw-r----- 1 root disk 8,  0 Sep  6 09:33 /dev/sda 
+brw-r----- 1 root disk 8,  1 Sep  6 09:34 /dev/sda1 
+brw-r----- 1 root disk 8,  2 Sep  6 09:33 /dev/sda2 
+brw-r----- 1 root disk 8,  3 Sep  6 09:34 /dev/sda3 
+brw-r----- 1 root disk 8, 16 Sep  6 09:33 /dev/sdb 
+brw-r----- 1 root disk 8, 32 Sep  6 09:33 /dev/sdc 
+brw-r----- 1 root disk 8, 48 Sep  6 09:33 /dev/sdd 
+brw-r----- 1 root disk 8, 64 Sep  6 09:33 /dev/sde
+```
+
+<p>这样存在一个问题，当一块磁盘因为各种原因从系统移除，就会导致磁盘路径被改变或者修改了磁盘的权限。比如在一个系统中有三块磁盘，sda,sdb,sdc，在下一次重启中sdb损坏了，系统将会只认到两块盘：sda及sdb，但此时的sdb其实是原来的sdc。在RAC或者ASM环境中，LUN mapping过来的名称改变会导致ASM无法识别该磁盘组。</p>
+
+<p>利用ASMLib或者UDEV绑定设备名称可避免这种情况的发生。</p>
+
+<p>本文将示范在RHEL5下如何配置udev，如何利用udev固定设备名称，并且在RAC环境中用udev取代ASMlib。</p>
+
+<h1>2.Configuring udev</h1>
+<p>UDEV能够根据系统中的硬件设备的状态，动态的更新设备文件。包括设备文件的创建及删除等。Udev具体的实现过程本文不深入研究，主要会使用就行了。</p> 
+
+<p>Udev的配置主要有两个组件：规则配置文件及权限配置文件。在RHEL5以后，权限配置文件已经包含在规则配置文件中，本文不予讨论。</p> 
+
+```
+[root@orcl1:/etc/udev]# ll 
+total 32 
+drwxr-xr-x 2 root root 4096 Sep  6 00:17 makedev.d 
+drwxr-xr-x 2 root root 4096 Sep  6 00:40 rules.d 
+drwxr-xr-x 2 root root 4096 Sep  6 00:22 scripts 
+-rw-r--r-- 1 root root  226 Feb  3  2012 udev.conf
+```
+
+Udev.conf文档是主要配置文档，它定义了配置文件位置，udev数据库及其他信息。 
+
+```
+[root@orcl1:/etc/udev]# cat udev.conf 
+# udev.conf
+
+# The initial syslog(3) priority: "err", "info", "debug" or its 
+# numerical equivalent. For runtime debugging, the daemons internal 
+# state can be changed with: "udevcontrol log_priority=&lt;value&gt;". 
+udev_log="err"
+```
+<h2>2.1 Setting rules</h2>
+规则文件基本上决定了磁盘如何被识别，如何在重启或者磁盘替换的时候，分配固定设备名称。规则文件主要包含以下几个栏位： 
+<li>BUS：设备总线类型</li>
+<li>KERNEL：内核设备名称</li> 
+<li>PROGRAM：调用外部命令</li> 
+<li>RESULT：外部命令PROGRAM返回的结果</li> 
+<li>NAME：在/dev下产生的设备文件名</li> 
+<li>OWNER、GROUP及MODE表面此磁盘的权限属主</li> 
+例如： 
+```
+KERNEL=="sd*", BUS=="scsi", PROGRAM=="/sbin/scsi_id -g -u -s %p", RESULT=="SATA_VBOX_HARDDISK_VB96362bad-ec8eda70_", NAME="asm-diske", OWNER="grid", GROUP="asmadmin", MODE="0660" 
+```
+<p>通过scsi_id命令可获取设备UUID（唯一性），通过此UUID固定设备名称。</p> 
+对于规则文件内容的添加，可用以下脚本产生：
+```
+for i in b c d e; 
+do 
+echo "KERNEL==\"sd*\", BUS==\"scsi\", PROGRAM==\"/sbin/scsi_id -g -u -s %p\", RESULT==\"`scsi_id -g -u -s /block/sd$i`\", NAME=\"asm-disk$i\", OWNER=\"grid\", GROUP=\"asmadmin\", MODE=\"0660\"" 
+done
+```
+<h1>3．Example</h1>
+```
+[root@orcl1:/etc/udev]# for i in b c d e; 
+do 
+echo "KERNEL==\"sd*\", BUS==\"scsi\", PROGRAM==\"/sbin/scsi_id -g -u -s %p\", RESULT==\"`scsi_id -g -u -s /block/sd$i`\", NAME=\"asm-disk$i\", OWNER=\"grid\", GROUP=\"asmadmin\", MODE=\"0660\"" 
+done
+
+KERNEL=="sd*", BUS=="scsi", PROGRAM=="/sbin/scsi_id -g -u -s %p", RESULT=="SATA_VBOX_HARDDISK_VBb16974be-5341d251_", NAME="asm-diskb", OWNER="grid", GROUP="asmadmin", MODE="0660" 
+KERNEL=="sd*", BUS=="scsi", PROGRAM=="/sbin/scsi_id -g -u -s %p", RESULT=="SATA_VBOX_HARDDISK_VB6094ba99-e26492cb_", NAME="asm-diskc", OWNER="grid", GROUP="asmadmin", MODE="0660" 
+KERNEL=="sd*", BUS=="scsi", PROGRAM=="/sbin/scsi_id -g -u -s %p", RESULT=="SATA_VBOX_HARDDISK_VB24305be5-421a5edc_", NAME="asm-diskd", OWNER="grid", GROUP="asmadmin", MODE="0660" 
+KERNEL=="sd*", BUS=="scsi", PROGRAM=="/sbin/scsi_id -g -u -s %p", RESULT=="SATA_VBOX_HARDDISK_VB96362bad-ec8eda70_", NAME="asm-diske", OWNER="grid", GROUP="asmadmin", MODE="0660"
+```
+将以上输出添加入/etc/udev/rules.d/99-oracle-asmdevices.rules文件中，并且重启udev服务，以便识别新添加udev设备：
+```
+[root@orcl1:/etc/udev/rules.d]# start_udev 
+Starting udev: [  OK  ]
+```
+
+查询udev设备：
+```
+[root@orcl1:/etc/udev/rules.d]# ll /dev/asm* 
+brw-rw---- 1 grid asmadmin 8, 16 Sep  6 10:47 /dev/asm-diskb 
+brw-rw---- 1 grid asmadmin 8, 32 Sep  6 10:47 /dev/asm-diskc 
+brw-rw---- 1 grid asmadmin 8, 48 Sep  6 10:47 /dev/asm-diskd 
+brw-rw---- 1 grid asmadmin 8, 64 Sep  6 10:47 /dev/asm-diske
+```
+脚本原创：<a title="http://www.oracledatabase12g.com/archives/utilize-udev-resolve-11gr2-rac-asm-device-name.html" href="http://www.oracledatabase12g.com/archives/utilize-udev-resolve-11gr2-rac-asm-device-name.html">http://www.oracledatabase12g.com/archives/utilize-udev-resolve-11gr2-rac-asm-device-name.html</a>
+<br />
+在安装RAC设定ASM磁盘组时，根据当前路径即可完成ASM磁盘组的设定。<br /> 
+在RHEL 6中，上述脚本已经失效，请参照如下设定：
+```
+--确认版本
+[root@linora ~]# cat /etc/redhat-release 
+Red Hat Enterprise Linux Server release 6.5 (Santiago)
+[root@linora ~]# echo "options=--whitelisted --replace-whitespace"  >> /etc/scsi_id.config
+[root@linora ~]# cat /etc/scsi_id.config 
+options=--whitelisted --replace-whitespace
+--确认要绑定的设备，这里只有/dev/sdb
+[root@linora ~]# ll /dev/sd*
+brw-rw---- 1 root disk 8,  0 Sep 16 12:47 /dev/sda
+brw-rw---- 1 root disk 8,  1 Sep 16 12:47 /dev/sda1
+brw-rw---- 1 root disk 8,  2 Sep 16 12:47 /dev/sda2
+brw-rw---- 1 root disk 8,  3 Sep 16 12:47 /dev/sda3
+brw-rw---- 1 root disk 8, 16 Sep 16 12:47 /dev/sdb
+--执行脚本
+for i in b c d e f ;
+do
+echo "KERNEL==\"sd*\", BUS==\"scsi\", PROGRAM==\"/sbin/scsi_id --whitelisted --replace-whitespace --device=/dev/\$name\", RESULT==\"`/sbin/scsi_id --whitelisted --replace-whitespace --device=/dev/sd$i`\", NAME=\"asm-disk$i\", OWNER=\"grid\", GROUP=\"asmadmin\", MODE=\"0660\""      
+done
+--将以上输出写入/etc/udev/rules.d/99-oracle-asmdevices.rules
+--启动udev
+[root@linora ~]# start_udev
+Starting udev: [  OK  ]
+```
+<h1>4、关于多路径及udev的使用(RHEL6.X)</h1>
+<h2>4.1 EMC PowerPath</h2>
+PowerPath跟linux自带的DM-Multipath是冲突的，如果要使用powerpath必需要关闭掉mpath：
+```
+[root@db01 ~]# powermt display dev=all
+
+ERROR: Cannot open PowerPath. Initialization error
+```
+删除multipath配置文件，关闭后台进程，并且禁止随机启动
+```
+rm -rf /etc/multipath.com
+/etc/init.d/multipathd stop
+chkconfig multipathd off
+[root@db02 ~]# mpathconf --disable
+```
+重启后：
+```
+[root@db02 ~]# powermt display dev=all
+Pseudo name=emcpowera
+VNX ID=CKM00144603151 [db_0_1_share]
+Logical device ID=6006016060703A00851B09E01B0FE511 [db_0_1_share_lun8]
+state=alive; policy=CLAROpt; queued-IOs=0
+Owner: default=SP A, current=SP A       Array failover mode: 4
+==============================================================================
+--------------- Host ---------------   - Stor -  -- I/O Path --   -- Stats ---
+###  HW Path               I/O Paths    Interf.  Mode     State   Q-IOs Errors
+==============================================================================
+   0 qla2xxx                sdi        SP A1     active   alive      0      0
+   0 qla2xxx                sdr        SP B1     active   alive      0      0
+   2 qla2xxx                sdaa       SP A0     active   alive      0      0
+   2 qla2xxx                sdaj       SP B0     active   alive      0      0
+...
+```
+由于设备名称已经绑定，只需要在udev中赋予相关的授权即可
+```
+[root@db01 rules.d]# touch 99-oracle-asmdevices.rules
+[root@db01 rules.d]# ls -l /dev/emc*
+crw-r--r-- 1 root root  10,  56 6月  10 15:22 /dev/emcpower
+brw-rw---- 1 root disk 120,   0 6月  10 15:22 /dev/emcpowera
+brw-rw---- 1 root disk 120,  16 6月  10 15:22 /dev/emcpowerb
+brw-rw---- 1 root disk 120,  32 6月  10 15:22 /dev/emcpowerc
+brw-rw---- 1 root disk 120,  48 6月  10 15:22 /dev/emcpowerd
+brw-rw---- 1 root disk 120,  64 6月  10 15:22 /dev/emcpowere
+brw-rw---- 1 root disk 120,  80 6月  10 15:22 /dev/emcpowerf
+brw-rw---- 1 root disk 120,  96 6月  10 15:22 /dev/emcpowerg
+brw-rw---- 1 root disk 120, 112 6月  10 15:22 /dev/emcpowerh
+brw-rw---- 1 root disk 120, 128 6月  10 15:22 /dev/emcpoweri
+[root@db01 rules.d]# vi 99-oracle-asmdevices.rules 
+SUBSYSTEM=="block", KERNEL=="emcpowera", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpowerb", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpowerc", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpowerd", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpowere", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpowerf", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpowerg", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpowerh", GROUP="dba", OWNER="grid", MODE="0660"
+SUBSYSTEM=="block", KERNEL=="emcpoweri", GROUP="dba", OWNER="grid", MODE="0660"
+[root@db01 rules.d]# start_udev 
+正在启动 udev：[确定]
+crw-rw---- 1 root root  10,  56 6月  10 15:30 /dev/emcpower
+brw-rw---- 1 grid dba  120,   0 6月  10 15:30 /dev/emcpowera
+brw-rw---- 1 grid dba  120,  16 6月  10 15:30 /dev/emcpowerb
+brw-rw---- 1 grid dba  120,  32 6月  10 15:30 /dev/emcpowerc
+brw-rw---- 1 grid dba  120,  48 6月  10 15:30 /dev/emcpowerd
+brw-rw---- 1 grid dba  120,  64 6月  10 15:30 /dev/emcpowere
+brw-rw---- 1 grid dba  120,  80 6月  10 15:30 /dev/emcpowerf
+brw-rw---- 1 grid dba  120,  96 6月  10 15:30 /dev/emcpowerg
+brw-rw---- 1 grid dba  120, 112 6月  10 15:30 /dev/emcpowerh
+brw-rw---- 1 grid dba  120, 128 6月  10 15:30 /dev/emcpoweri
+```
+集群安装完成后查看voting disk
+```
+[grid@db02:/u01/app/11gr2/grid/log/db02]$ crsctl query css votedisk
+##  STATE    File Universal Id                File Name Disk group
+--  -----    -----------------                --------- ---------
+ 1. ONLINE   037f0dd1fc9e4fb5bff478a6d5d448d5 (/dev/emcpowera) [OCR]
+ 2. ONLINE   3b7395481c8b4ff1bfd04007f05e0106 (/dev/emcpowerb) [OCR]
+ 3. ONLINE   3c82301f45724f36bfa2dae4af73338f (/dev/emcpowerc) [OCR]
+Located 3 voting disk(s).
+```
+<h2>4.2 dm-multipath with udev</h2>
+通过脚本查找出设备wwid
+```
+for i in c d;
+do 
+/sbin/scsi_id --whitelisted --replace-whitespace --device=/dev/sd$i
+done
+```
+将设备wwid映射到配置文件中，在实际环境中，这一步可以省略，默认的multipath.conf文件会自动聚合出来，同时给出wwid：
+```
+[root@db01 ~]# multipath -ll
+mpathe (36006016060703a003b8427f0790ee511) dm-3 DGC,VRAID
+size=304G features='1 queue_if_no_path' hwhandler='1 emc' wp=rw
+|-+- policy='round-robin 0' prio=1 status=active
+| |- 0:0:1:3  sdm  8:192  active ready running
+| `- 2:0:1:3  sdae 65:224 active ready running
+`-+- policy='round-robin 0' prio=0 status=enabled
+  |- 0:0:0:3  sdd  8:48   active ready running
+  `- 2:0:0:3  sdv  65:80  active ready running
+mpathd (36006016060703a006f80e2e4790ee511) dm-2 DGC,VRAID
+size=303G features='1 queue_if_no_path' hwhandler='1 emc' wp=rw
+|-+- policy='round-robin 0' prio=1 status=active
+| |- 0:0:0:2  sdc  8:32   active ready running
+| `- 2:0:0:2  sdu  65:64  active ready running
+`-+- policy='round-robin 0' prio=0 status=enabled
+  |- 0:0:1:2  sdl  8:176  active ready running
+  `- 2:0:1:2  sdad 65:208 active ready running
+```
+下面是测试时自己编辑的配置文件：
+```
+[root@oel6 rules.d]# cat /etc/multipath.conf | grep -v ^# | grep -v ^$ 
+blacklist {
+        #devnode "^(ram|raw|loop|fd|md|dm-|sr|scd|st)[0-9]*"
+        #devnode "^hd[a-z]"
+        devnode "sd[a-b]"
+        #wwid 1ATA_VBOX_HARDDISK_VB2314099c-4ddf514a 
+        #wwid 1ATA_VBOX_HARDDISK_VB9b70e1bb-9ea5e71b
+}
+defaults {
+        user_friendly_names no
+        getuid_callout "/sbin/scsi_id --whitelisted --replace-whitespace --device=/dev/%n"
+}
+multipaths {
+    multipath {
+        wwid 1ATA_VBOX_HARDDISK_VB0d3ee45b-3ed72c0c
+        alias data_mpath1
+    }
+    multipath {
+        wwid 1ATA_VBOX_HARDDISK_VB3dc9cda2-488673dc
+        alias data_mpath2
+    }
+}
+```
+重启multipathd进程，并且查看结果
+```
+[root@oel6 ~]# /etc/init.d/multipathd restart
+ok
+Stopping multipathd daemon: [  OK  ]
+Starting multipathd daemon: [  OK  ]
+[root@oel6 ~]# multipath -v2
+[root@oel6 ~]# multipath -ll
+data_mpath2 (1ATA_VBOX_HARDDISK_VB3dc9cda2-488673dc) dm-3 ATA,VBOX HARDDISK
+size=3.0G features='0' hwhandler='0' wp=rw
+`-+- policy='round-robin 0' prio=1 status=active
+  `- 5:0:0:0 sdd 8:48 active ready running
+data_mpath1 (1ATA_VBOX_HARDDISK_VB0d3ee45b-3ed72c0c) dm-2 ATA,VBOX HARDDISK
+size=3.0G features='0' hwhandler='0' wp=rw
+`-+- policy='round-robin 0' prio=1 status=active
+  `- 4:0:0:0 sdc 8:32 active ready running
+```
+用udev进行设备名称绑定
+```
+[root@oel6 rules.d]# cat 12-dm-permissions.rules 
+ENV{DM_NAME}=="data_mpath1",NAME="asmdisk1", OWNER:="grid", GROUP:="oinstall", MODE:="660"
+ENV{DM_NAME}=="data_mpath2",NAME="asmdisk2", OWNER:="grid", GROUP:="oinstall", MODE:="660"
+[root@oel6 rules.d]# cat 99-oracle-asmdevices.rules 
+KERNEL=="sd*", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_SERIAL}=="1ATA_VBOX_HARDDISK_VB0d3ee45b-3ed72c0c", OWNER="grid", GROUP="oinstall", MODE="0660"
+KERNEL=="sd*", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_SERIAL}=="1ATA_VBOX_HARDDISK_VB3dc9cda2-488673dc", OWNER="grid", GROUP="oinstall", MODE="0660"
+#restart udev
+udevadm control --reload-rules
+start_udev
+[root@oel6 rules.d]# ll /dev/asmdisk*
+brw-rw---- 1 grid oinstall 252, 2 Jun 10 20:50 /dev/asmdisk1
+brw-rw---- 1 grid oinstall 252, 3 Jun 10 20:50 /dev/asmdisk2
+```
+
+<h1>5、 RHEL 7 udev</h1>
+
+```
+#RHEL7.4 ASM udev加盘
+/usr/bin/scsi-rescan
+multipath -ll
+vi /etc/udev/rule.d/99-oracle-asmdevices.rules
+--restart udev
+/sbin/udevadm trigger --type=devices --action=change
+```
+ <b>EOF</b> 

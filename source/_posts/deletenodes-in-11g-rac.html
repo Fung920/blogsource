@@ -1,0 +1,332 @@
+---
+layout: post
+title: 11gr2 RAC删除节点
+categories:
+- oracle
+tags:
+- rac
+- deinstall
+published: true
+comments: false
+date: 2013-09-07
+---
+ RAC节点的删除跟添加的步骤刚好相反，先删除实例，再删除集群上此节点的信息，最后删除GI。
+<!--more-->
+<h1>1.       删除实例</h1>
+<h2>1.1.   使用DBCA图形界面删除</h2>
+<ul>
+	<li>在节点1以Oracle用户登录执行dbca命令</li>
+	<li>选择RAC数据库</li>
+	<li>选择Instance Management</li>
+	<li>选择Delete an instance</li>
+	<li>键入sysdba用户名及密码</li>
+	<li>选择需要删除的节点</li>
+</ul>
+<h2>1.2.   使用DBCA静默删除</h2>
+在节点1以Oracle用户登录，执行以下命令： 
+```
+[oracle@orcl1:/home/oracle]$ dbca -silent -deleteInstance -nodeList orcl2 -gdbName racdb \ 
+> -instanceName racdb2 -sysDBAUserName sys -sysDBAPassword oracle 
+Deleting instance 
+1% complete 
+2% complete 
+6% complete 
+13% complete 
+20% complete 
+26% complete 
+33% complete 
+40% complete 
+46% complete 
+53% complete 
+60% complete 
+66% complete 
+Completing instance management. 
+100% complete 
+Look at the log file "/u01/app/oracle/cfgtoollogs/dbca/racdb.log" for further details. 
+[oracle@orcl1:/home/oracle]$ 
+```
+验证结果:
+```
+[oracle@orcl1:/home/oracle]$ srvctl status database -d racdb 
+Instance racdb1 is running on node orcl1 
+[oracle@orcl1:/home/oracle]$ srvctl config database -d racdb 
+Database unique name: racdb 
+Database name: racdb 
+Oracle home: /u01/app/oracle/product/11gr2 
+Oracle user: oracle 
+Spfile: +DATA/racdb/spfileracdb.ora 
+Domain:  
+Start options: open 
+Stop options: immediate 
+Database role: PRIMARY 
+Management policy: AUTOMATIC 
+Server pools: racdb 
+Database instances: racdb1 
+Disk Groups: DATA 
+Mount point paths:  
+Services:  
+Type: RAC 
+Database is administrator managed
+```
+<h1>2.       删除RDBMS</h1>
+<h2>2.1.   停止监听</h2>
+在节点1上以grid用户使用以下命令停止要删除节点的监听：
+```
+[grid@orcl1:/home/grid]$ srvctl disable listener -l LISTENER -n orcl2 
+[grid@orcl1:/home/grid]$ srvctl stop listener -l LISTENER -n orcl2
+```
+<h2>2.2.   更新inventory</h2>
+以Oracle用户在被删除节点上上执行以下命令：
+```
+[oracle@orcl2:/u01/app/oracle/product/11gr2/oui/bin]$ ./runInstaller -updateNodeList \ 
+> ORACLE_HOME=/u01/app/oracle/product/11gr2 "CLUSTER_NODES=orcl2" -local 
+Starting Oracle Universal Installer...
+
+ Checking swap space: must be greater than 500 MB.   Actual 3972 MB    Passed 
+The inventory pointer is located at /etc/oraInst.loc 
+The inventory is located at /u01/app/oraInventory 
+'UpdateNodeList' was successful.
+```
+<h2>2.3.   删除Oracle home</h2>
+以Oracle用户在被删除节点上执行以下命令删除ORACLE HOME：
+```
+[oracle@orcl2:/home/oracle]$ $ORACLE_HOME/deinstall/deinstall –local
+```
+部分输出结果： 
+
+<pre>
+####################### CLEAN OPERATION SUMMARY ####################### 
+Cleaning the config for CCR 
+As CCR is not configured, so skipping the cleaning of CCR configuration 
+CCR clean is finished 
+Successfully detached Oracle home '/u01/app/oracle/product/11gr2' from the central inventory on the local node. 
+Successfully deleted directory '/u01/app/oracle/product/11gr2' on the local node. 
+Failed to delete directory '/u01/app/oracle' on the local node. 
+Oracle Universal Installer cleanup completed with errors.
+
+ Oracle deinstall tool successfully cleaned up temporary directories. 
+####################################################################### 
+
+ ############# ORACLE DEINSTALL & DECONFIG TOOL END ############# 
+
+[oracle@orcl2:/home/oracle]$
+</pre>
+<h2>2.4.   在节点1更新inventory</h2>
+以Oracle用户执行以下命令更新inventory信息：
+```
+[oracle@orcl1:/home/oracle]$ cd $ORACLE_HOME/oui/bin 
+[oracle@orcl1:/u01/app/oracle/product/11gr2/oui/bin]$ ./runInstaller -updateNodeList \ 
+ORACLE_HOME=/u01/app/oracle/product/11gr2 "CLUSTER_NODES=orcl1" 
+Starting Oracle Universal Installer...
+
+ Checking swap space: must be greater than 500 MB.   Actual 4012 MB    Passed 
+The inventory pointer is located at /etc/oraInst.loc 
+The inventory is located at /u01/app/oraInventory 
+'UpdateNodeList' was successful.
+```
+<h1>3.       删除Grid Infrastructure</h1>
+<h2>3.1.   查看ONS资源</h2>
+使用以下命令查看ONS资源是否为Unpinned：
+```
+[grid@orcl2:/home/grid]$ olsnodes -t -s 
+orcl1   Active  Unpinned 
+orcl2   Active  Unpinned
+```
+如果是pinned状态，请执行以下命令更改为Unpinned状态：
+<pre>$crsctl unpin css -n node_name</pre>
+<h2>3.2.   删除grid配置信息</h2>
+在被删除节点，删除Clusterware后台进程，以root用户执行<code>$GRID_HOME/crs/install/rootcrs.pl</code>脚本清除grid配置信息：
+```
+[root@orcl2:/root]# cd /u01/app/11.2.0/grid/crs/install/ 
+[root@orcl2:/u01/app/11.2.0/grid/crs/install]# ./rootcrs.pl -deconfig -deinstall –force 
+Using configuration parameter file: ./crsconfig_params 
+Network exists: 1/192.168.56.0/255.255.255.0/eth0, type static 
+VIP exists: /racdb1-vip/192.168.56.103/192.168.56.0/255.255.255.0/eth0, hosting node orcl1 
+VIP exists: /racdb2-vip/192.168.56.104/192.168.56.0/255.255.255.0/eth0, hosting node orcl2 
+GSD exists 
+ONS exists: Local port 6100, remote port 6200, EM port 2016 
+CRS-2673: Attempting to stop 'ora.registry.acfs' on 'orcl2' 
+CRS-2677: Stop of 'ora.registry.acfs' on 'orcl2' succeeded 
+CRS-2791: Starting shutdown of Oracle High Availability Services-managed resources on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.crsd' on 'orcl2' 
+CRS-2790: Starting shutdown of Cluster Ready Services-managed resources on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.oc4j' on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.CRS.dg' on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.DATA.dg' on 'orcl2' 
+CRS-2677: Stop of 'ora.DATA.dg' on 'orcl2' succeeded 
+CRS-2677: Stop of 'ora.CRS.dg' on 'orcl2' succeeded 
+CRS-2673: Attempting to stop 'ora.asm' on 'orcl2' 
+CRS-2677: Stop of 'ora.asm' on 'orcl2' succeeded 
+CRS-2677: Stop of 'ora.oc4j' on 'orcl2' succeeded 
+CRS-2672: Attempting to start 'ora.oc4j' on 'orcl1' 
+CRS-2676: Start of 'ora.oc4j' on 'orcl1' succeeded 
+CRS-2792: Shutdown of Cluster Ready Services-managed resources on 'orcl2' has completed 
+CRS-2677: Stop of 'ora.crsd' on 'orcl2' succeeded 
+CRS-2673: Attempting to stop 'ora.ctssd' on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.evmd' on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.asm' on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.drivers.acfs' on 'orcl2' 
+CRS-2673: Attempting to stop 'ora.mdnsd' on 'orcl2' 
+CRS-2677: Stop of 'ora.evmd' on 'orcl2' succeeded 
+CRS-2677: Stop of 'ora.ctssd' on 'orcl2' succeeded 
+CRS-2677: Stop of 'ora.mdnsd' on 'orcl2' succeeded 
+CRS-2677: Stop of 'ora.drivers.acfs' on 'orcl2' succeeded 
+CRS-2677: Stop of 'ora.asm' on 'orcl2' succeeded 
+CRS-2673: Attempting to stop 'ora.cluster_interconnect.haip' on 'orcl2' 
+CRS-2677: Stop of 'ora.cluster_interconnect.haip' on 'orcl2' succeeded 
+CRS-2673: Attempting to stop 'ora.cssd' on 'orcl2' 
+CRS-2677: Stop of 'ora.cssd' on 'orcl2' succeeded 
+CRS-2673: Attempting to stop 'ora.crf' on 'orcl2' 
+CRS-2677: Stop of 'ora.crf' on 'orcl2' succeeded 
+CRS-2673: Attempting to stop 'ora.gipcd' on 'orcl2' 
+CRS-2677: Stop of 'ora.gipcd' on 'orcl2' succeeded 
+CRS-2673: Attempting to stop 'ora.gpnpd' on 'orcl2' 
+CRS-2677: Stop of 'ora.gpnpd' on 'orcl2' succeeded 
+CRS-2763: Shutdown of Oracle High Availability Services-managed resources on 'orcl2' has completed 
+CRS-4133: Oracle High Availability Services has been stopped. 
+Removing Trace File Analyzer 
+Successfully deconfigured Oracle clusterware stack on this node 
+[root@orcl2:/u01/app/11.2.0/grid/crs/install]#
+```
+<h2>3.3.   确认节点信息并删除</h2>
+```
+[grid@orcl1:/home/grid]$ olsnodes -s -t 
+orcl1   Active  Unpinned 
+orcl2   Inactive        Unpinned
+```
+
+ 在节点1以root用户执行以下命令，删除RAC节点：
+```
+[root@orcl1:/root]# /u01/app/11.2.0/grid/bin/crsctl delete node -n orcl2 
+CRS-4661: Node orcl2 successfully deleted. 
+[root@orcl1:/root]#
+```
+再次确认集群节点信息：
+```
+[grid@orcl1:/home/grid]$ olsnodes -s -t 
+orcl1   Active  Unpinned 
+[grid@orcl1:/home/grid]$
+```
+<h2>3.4.   更新inventory信息</h2>
+在被删除节点，以grid用户执行以下命令更新集群inventory信息：
+```
+[grid@orcl2:/home/grid]$ cd $ORACLE_HOME/oui/bin 
+[grid@orcl2:/u01/app/11.2.0/grid/oui/bin]$ ./runInstaller -updateNodeList ORACLE_HOME=/u01/app/11.2.0/grid \ 
+"CLUSTER_NODES=orcl2" CRS=TRUE -silent -local
+
+ Starting Oracle Universal Installer... 
+
+ Checking swap space: must be greater than 500 MB.   Actual 4089 MB    Passed 
+The inventory pointer is located at /etc/oraInst.loc 
+The inventory is located at /u01/app/oraInventory 
+'UpdateNodeList' was successful. 
+[grid@orcl2:/u01/app/11.2.0/grid/oui/bin]$
+```
+<h2>3.5.   删除GI软件</h2>
+在被删除节点，以grid用户登录，执行以下命令删除此节点GI软件（<b>如果不指定</b><b>-local</b><b>选项，那么默认将会把所有的集群信息全部删除，这是非常危险的操作</b>）： 
+
+<pre>
+[grid@orcl2:/home/grid]$ $ORACLE_HOME/deinstall/deinstall -local
+</pre>
+Deinstall时，需要用户输入<code>VIP</code>、<code>LISTENER</code>等信息，并在中间步骤需要另开一个session，以root用户执行脚本，最后还需要手动删除部分文件(<code>/etc/oraInst.log</code>、<code>/etc/oratab</code>跟<code>/opt/ORCLfmap</code>)，要注意细心阅读output，请勿无视输出结果： 
+
+```
+####################### CLEAN OPERATION SUMMARY ####################### 
+Following RAC listener(s) were de-configured successfully: LISTENER 
+Oracle Clusterware is stopped and successfully de-configured on node "orcl2" 
+Oracle Clusterware is stopped and de-configured successfully. 
+Successfully detached Oracle home '/u01/app/11.2.0/grid' from the central inventory on the local node. 
+Successfully deleted directory '/u01/app/11.2.0/grid' on the local node. 
+Successfully deleted directory '/u01/app/oraInventory' on the local node. 
+Successfully deleted directory '/u01/app/grid' on the local node. 
+Oracle Universal Installer cleanup was successful.
+
+ Run 'rm -rf /etc/oraInst.loc' as root on node(s) 'orcl2' at the end of the session. 
+
+ Run 'rm -rf /opt/ORCLfmap' as root on node(s) 'orcl2' at the end of the session. 
+Run 'rm -rf /etc/oratab' as root on node(s) 'orcl2' at the end of the session. 
+Oracle deinstall tool successfully cleaned up temporary directories. 
+####################################################################### 
+
+ ############# ORACLE DEINSTALL & DECONFIG TOOL END ############# 
+
+[grid@orcl2:/home/grid]$  
+[grid@orcl2:/home/grid]$ 
+[root@orcl2:/root]# rm -rf /etc/oraInst.loc 
+[root@orcl2:/root]# rm -rf /opt/ORCLfmap 
+[root@orcl2:/root]# rm -rf /etc/oratab 
+[root@orcl2:/root]#
+```
+<h2>3.6.   更新剩余节点inventory</h2>
+以grid用户执行以下命令，更新inventory：
+```
+[grid@orcl1:/home/grid]$ cd $ORACLE_HOME/oui/bin 
+[grid@orcl1:/u01/app/11.2.0/grid/oui/bin]$ ./runInstaller -updateNodeList \ 
+> ORACLE_HOME=/u01/app/11.2.0/grid \ 
+> "CLUSTER_NODES=orcl1" CRS=TRUE -silent 
+Starting Oracle Universal Installer...
+
+ Checking swap space: must be greater than 500 MB.   Actual 3980 MB    Passed 
+The inventory pointer is located at /etc/oraInst.loc 
+The inventory is located at /u01/app/oraInventory 
+'UpdateNodeList' was successful. 
+[grid@orcl1:/u01/app/11.2.0/grid/oui/bin]$
+```
+<h1>4.       验证集群删除结果</h1>
+```
+[grid@orcl1:/home/grid]$ cluvfy stage -post nodedel -n orcl2 -verbose
+
+Performing post-checks for node removal  
+
+Checking CRS integrity... 
+
+Clusterware version consistency passed 
+The Oracle Clusterware is healthy on node "orcl1" 
+
+CRS integrity check passed 
+Result:  
+Node removal check passed 
+
+Post-check for node removal was successful.  
+[grid@orcl1:/home/grid]$ crsctl stat res -t  
+-------------------------------------------------------------------------------- 
+NAME           TARGET  STATE        SERVER                   STATE_DETAILS        
+-------------------------------------------------------------------------------- 
+Local Resources 
+-------------------------------------------------------------------------------- 
+ora.CRS.dg 
+               ONLINE  ONLINE       orcl1                                         
+ora.DATA.dg 
+               ONLINE  ONLINE       orcl1                                         
+ora.LISTENER.lsnr 
+               ONLINE  ONLINE       orcl1                                         
+ora.asm 
+               ONLINE  ONLINE       orcl1                    Started              
+ora.gsd 
+               OFFLINE OFFLINE      orcl1                                         
+ora.net1.network 
+               ONLINE  ONLINE       orcl1                                         
+ora.ons 
+               ONLINE  ONLINE       orcl1                                         
+ora.registry.acfs 
+               ONLINE  ONLINE       orcl1                                         
+-------------------------------------------------------------------------------- 
+Cluster Resources 
+-------------------------------------------------------------------------------- 
+ora.LISTENER_SCAN1.lsnr 
+      1        ONLINE  ONLINE       orcl1                                         
+ora.cvu 
+      1        ONLINE  ONLINE       orcl1                                         
+ora.oc4j 
+      1        ONLINE  ONLINE       orcl1                                         
+ora.orcl1.vip 
+      1        ONLINE  ONLINE       orcl1                                         
+ora.racdb.db 
+      1        ONLINE  ONLINE       orcl1                    Open                 
+ora.scan1.vip 
+      1        ONLINE  ONLINE       orcl1                                         
+[grid@orcl1:/home/grid]$  
+```
+ Reference:<a href="http://docs.oracle.com/cd/E11882_01/rac.112/e41960/toc.htm" title="Oracle® Real Application Clusters Administration and Deployment Guide 11g Release 2 (11.2)" target="_blank">Oracle® Real Application Clusters Administration and Deployment Guide 11g Release 2 (11.2)</a>
+<br />
+<b>EOF</b> 

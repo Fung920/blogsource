@@ -1,0 +1,65 @@
+---
+layout: post
+title: 使用AUDIT_SYSLOG_LEVEL审计
+categories:
+- linux
+tags: audit
+published: true
+comments: false
+date: 2013-06-07
+---
+<h3>1.作业系统层面设置</h3>
+<p>Linux/UNIX系统有syslog来专门记录系统日志，且针对syslog可以自行设置以便满足用户自定义需求，一般配置文件存放在/etc/syslog.conf下。RedHat Linux该文件结构如下：</p>
+<!--more-->
+在Redhat 6中，syslogd配置文件已经改为/etc/rsyslog.conf
+```
+[root@linora ~]# cat /etc/syslog.conf 
+# Log all kernel messages to the console.
+# Logging much else clutters up the screen.
+#kern.*                                                 /dev/console
+# Log anything (except mail) of level info or higher.
+# Don't log private authentication messages!
+*.info;mail.none;authpriv.none;cron.none                /var/log/messages
+# The authpriv file has restricted access.
+authpriv.*                                              /var/log/secure
+# Log all the mail messages in one place.
+mail.*                                                  -/var/log/maillog
+# Log cron stuff
+cron.*                                                  /var/log/cron
+# Everybody gets emergency messages
+*.emerg                                                 *
+# Save news errors of level crit and higher in a special file.
+uucp,news.crit                                          /var/log/spooler
+# Save boot messages also to boot.log
+local7.*                                                /var/log/boot.log
+--添加关于Oracle的logged
+cat >>/etc/syslog.conf<<EOF
+# About Oracle SysLog
+user.notice                                            /var/log/oracle_dbms
+EOF
+```
+ 这表示指定一个user.notice的输出位置是<code>/var/log/oracle_dbms</code>文件。重新启动syslogd后台进程，让设置生效，或者直接重启系统。
+```
+[root@linora ~]# /etc/rc.d/init.d/syslog restart
+Shutting down kernel logger: [  OK  ]
+Shutting down system logger: [  OK  ]
+Starting system logger: [  OK  ]
+Starting kernel logger: [  OK  ]
+```
+<h3>2.数据库层面设置</h3>
+
+对audit_syslog_level这个参数进行设置，非动态参数，需要重启实例
+```
+--查看默认值
+SYS@linora>SHOW parameter audit_syslog
+
+NAME                        TYPE                   VALUE
+--------------- ---------------------- ------------------------------
+audit_syslog_level        string
+--修改参数
+ALTER system SET audit_syslog_level='user.notice' scope=spfile;
+```
+<p>重启实例以便生效。</p>
+注意，这种日志记录审计只能审计sys即数据库管理员或者操作员等有限权限的登录登出，但不能记录数据库层面操作，比如DDL，DML语句。
+<li>AUDIT_SYSLOG_LEVEL 独立于AUDIT_TRAIL, 当设置了AUDIT_SYSLOG_LEVEL而AUDIT_TRAIL为默认值NONE时，CONNECT,STARTUP,与SHUTDOWN信息始终由SYSLOG记录。</li>
+<li>同时设置AUDIT_SYSLOG_LEVEL与AUDIT_SYS_OPERATIONS=TURE 会将SYSDBA 或SYSOPER权限执行的任何操作通过SYSLOG记录，即便AUDIT_TRAIL=NONE。</li>

@@ -1,0 +1,92 @@
+---
+layout: post
+title: ora-12514解决一例
+categories:
+- oracle
+tags:
+- ora-00132
+- ora-12514
+published: true
+comments: false
+date: 2013-09-02
+---
+ 1.环境 
+11g RAC,重装时取消了REMOTE_LISTENER参数，导致在连接tns的时候报错。
+<!--more-->
+```
+C:\Users\Administrator>tnsping fung
+TNS Ping Utility for 32-bit Windows: Version 10.2.0.4.0 - Production on 02-9月 - 
+2013 15:52:32 
+Copyright (c) 1997,  2007, Oracle.  All rights reserved. 
+
+ 已使用的参数文件: 
+D:\OraClient\oracle\product\10.2.0\client_1\network\admin\sqlnet.ora
+已使用 TNSNAMES 适配器来解析别名 
+Attempting to contact (DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168. 
+137.112)(PORT = 1521)) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = fung 
+))) 
+OK (20 毫秒) 
+C:\Users\Administrator>sqlplus system@fung 
+SQL*Plus: Release 10.2.0.4.0 - Production on 星期一 9月 2 15:52:39 2013 
+Copyright (c) 1982, 2007, Oracle.  All Rights Reserved. 
+输入口令: 
+ERROR: 
+ORA-12514: TNS: 监听程序当前无法识别连接描述符中请求的服务
+```
+2.登录Server，查询该参数
+```
+[oracle@ora11g:/home/oracle]$ sqlplus "/as sysdba"
+SQL*Plus: Release 11.2.0.4.0 Production on Mon Sep 2 16:04:36 2013 
+Copyright (c) 1982, 2013, Oracle.  All rights reserved. 
+Connected to: 
+Oracle Database 11g Enterprise Edition Release 11.2.0.4.0 - 64bit Production 
+With the Partitioning, Real Application Clusters, Automatic Storage Management, OLAP, 
+Data Mining and Real Application Testing options
+SQL> show parameter remote 
+
+ NAME                                 TYPE        VALUE 
+------------------------------------ ----------- ------------------------------ 
+remote_dependencies_mode             string      TIMESTAMP 
+remote_listener                      string 
+remote_login_passwordfile            string      EXCLUSIVE 
+remote_os_authent                    boolean     FALSE 
+remote_os_roles                      boolean     FALSE 
+result_cache_remote_expiration       integer     0 
+```
+在spfile中添加remote_listener： 
+```
+SQL> alter system set remote_listener='scan-ip:1521' scope=both sid='*'; 
+alter system set remote_listener='scan-ip:1521' scope=both sid='*' 
+*
+ERROR at line 1: 
+ORA-02097: parameter cannot be modified because specified value is invalid 
+ORA-00119: invalid specification for system parameter REMOTE_LISTENER 
+ORA-00132: syntax error or unresolved network name 'scan-ip:1521' 
+```
+再次报错，使用另一种方式解析： 
+```
+SQL> alter system set remote_listener='(ADDRESS_LIST=(Address=(Protocol=tcp) (Host=scan-ip)(Port=1521)))' scope=both sid='*'; 
+System altered. 
+SQL> show parameter remote 
+NAME                                 TYPE        VALUE 
+------------------------------------ ----------- ------------------------------ 
+remote_dependencies_mode             string      TIMESTAMP 
+remote_listener                      string      (ADDRESS_LIST=(Address=(Protoc 
+                                                 ol=tcp) (Host=scan-ip)(Port=15 
+                                                 21))) 
+remote_login_passwordfile            string      EXCLUSIVE 
+remote_os_authent                    boolean     FALSE 
+remote_os_roles                      boolean     FALSE 
+result_cache_remote_expiration       integer     0 
+
+C:\Users\Administrator>sqlplus system@fung
+SQL*Plus: Release 10.2.0.4.0 - Production on 星期一 9月 2 16:02:01 2013 
+Copyright (c) 1982, 2007, Oracle.  All Rights Reserved. 
+输入口令: 
+连接到: 
+Oracle Database 11g Enterprise Edition Release 11.2.0.4.0 - 64bit Production 
+With the Partitioning, Real Application Clusters, Automatic Storage Management, 
+OLAP, 
+Data Mining and Real Application Testing options 
+SQL>
+```

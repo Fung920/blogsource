@@ -1,0 +1,198 @@
+---
+layout: post
+title: 11gr2 RAC Voting Disk及OCR管理
+categories:
+- oracle
+tags:
+- rac
+published: true
+comments: false
+date: 2013-09-04
+---
+ <h1>1.关闭ntp，使用ctss同步两个节点</h1>
+要使用Oracle提供的ctss(Cluster Time Synchronize Service)服务，必须停止使用NTP服务，并且移除NTP配置文件。在Linux中，使用以下操作可达成此目的： 
+<!--more-->
+```
+#chkconfig ntpd off 
+#mv /etc/ntp.conf /etc/ntp.conf_bak 
+```
+ 查询CTSS服务是否为Active： 
+
+```
+[grid@ora11g:/home/grid]$ crsctl stat res ora.ctssd -t -init
+[grid@ora11g:/home/grid]$ crsctl check ctss 
+CRS-4701: The Cluster Time Synchronization Service is in Active mode. 
+CRS-4702: Offset (in msec): 0
+```
+<h1>2.管理Voting文件</h1>
+<h2>I．查询Voting文件的编号状态及所在磁盘名：</h2>
+```
+[grid@ora11g:/home/grid]$ crsctl query css votedisk
+##  STATE    File Universal Id                File Name Disk group 
+--  -----    -----------------                --------- --------- 
+1. ONLINE   565fecb6ed384fc0bfa5a6d8901e9296 (/dev/oracleasm/disks/CRS1) [OCR] 
+2. ONLINE   523c79b027b44fbebfee7eaf0f429f54 (/dev/oracleasm/disks/CRS2) [OCR] 
+3. ONLINE   31590f50dea54f07bf1b4e429bd733f5 (/dev/oracleasm/disks/CRS3) [OCR] 
+Located 3 voting disk(s).
+```
+<h2>II．删除损坏的Voting文件：</h2>
+<pre>
+$crsctl delete css votedisk 31590f50dea54f07bf1b4e429bd733f5
+</pre>
+
+ 然后在原来的存储位置重新添加一个Voting文件： 
+
+<pre>
+$crsctl add css votedisk +OCR
+</pre>
+<h2>III．Voting文件迁移</h2>
+希望将Voting文件从OCR磁盘组迁移至+DATA磁盘组，使用以下操作： 
+
+<pre>
+$crsctl replace votedisk +DATA
+</pre>
+<h2>IV．所有Voting文件损坏的情况</h2>
+首先需要以root用户将Clusterware启动到exclusive模式： 
+
+<pre>
+#crsctl start crs –excl
+</pre>
+
+ 再查询Voting文件状态，显示结果为空或者在STATE字段显示为OFF 
+
+<pre>
+[grid@ora11g:/home/grid]$ crsctl query css votedisk
+</pre>
+
+ 因为Voting Disk存储在ASM磁盘中，通过以下命令可以恢复Voting文件，恢复的Voting文件可以被恢复到以前的磁盘组中，或者其他组： 
+
+<pre>
+$crsctl replace votedisk +OCR
+</pre>
+
+ 替换完再次查询Voting文件的状态，然后用root用户重新启动Clusterware： 
+
+<pre>
+#crsctl stop crs
+#crsctl start crs
+</pre>
+<h1>3.管理OCR文件</h1>
+OCR记录Clusterware及数据库的配置信息。对OCR的管理主要包括备份、恢复、添加、删除及迁移等。
+<h2>I．备份</h2>
+```
+[root@ora11g:/root]# /u01/app/grid/product/11.2.0.4/bin/ocrconfig -manualbackup
+ ora11g     2013/09/04 10:43:57     /u01/app/grid/product/11.2.0.4/cdata/fung/backup_20130904_104357.ocr 
+ ora11g     2013/09/04 10:29:22     /u01/app/grid/product/11.2.0.4/cdata/fung/backup_20130904_102922.ocr
+```
+查看备份结果： 
+
+```
+[root@ora11g:/root]# /u01/app/grid/product/11.2.0.4/bin/ocrconfig -showbackup
+PROT-24: Auto backups for the Oracle Cluster Registry are not available 
+ora11g     2013/09/04 10:29:22     /u01/app/grid/product/11.2.0.4/cdata/fung/backup_20130904_102922.ocr
+```
+<p>OCR文件的备份是一个二进制文件，但是通过ocrdump命令可以查看它的内存：</p> 
+
+ 语法： 
+
+```
+#ocrdump -backupfile backup_file_name
+[root@ora11g:/root]# /u01/app/grid/product/11.2.0.4/bin/ocrdump -backupfile /u01/app/grid/product/11.2.0.4/cdata/fung/backup_20130904_102922.ocr 
+[root@ora11g:/root]# ll 
+total 288 
+-rw------- 1 root root   1840 Aug 30 20:55 anaconda-ks.cfg 
+drwxr-xr-x 2 root root   4096 Aug 30 14:14 Desktop 
+-rw-r--r-- 1 root root  56109 Aug 30 20:54 install.log 
+-rw-r--r-- 1 root root      0 Aug 30 19:45 install.log.syslog 
+-rw------- 1 root root 205176 Sep  4 10:46 OCRDUMPFILE 
+```
+ 上面OCRDUMPFILE即为此命令产生的文本文件，可以直接vi打开。
+<h2>II．检查OCR文件是否损坏</h2>
+```
+[root@ora11g:/root]# /u01/app/grid/product/11.2.0.4/bin/ocrcheck -config
+Oracle Cluster Registry configuration is : 
+Device/File Name         :       +OCR 
+[root@ora11g:/root]# /u01/app/grid/product/11.2.0.4/bin/ocrcheck -local 
+Status of Oracle Local Registry is as follows : 
+Version                  :          3 
+Total space (kbytes)     :     262120 
+Used space (kbytes)      :       2532 
+Available space (kbytes) :     259588 
+ID                       :  180513404 
+Device/File Name         : /u01/app/grid/product/11.2.0.4/cdata/ora11g.olr 
+Device/File integrity check succeeded 
+Local registry integrity check succeeded 
+Logical corruption check succeeded
+```
+<h2>III．恢复OCR文件</h2>
+以root用户强制停止CRS： 
+
+<pre>
+#crsctl stop crs -f
+</pre>
+以root用户启动crs至exclusive状态： 
+<pre>#crsctl start crs -excl</pre>
+
+ 停止crsd进程： 
+
+<pre>
+#crsctl stop resource ora.crsd -init
+</pre>
+
+ 利用OCR备份文件进行恢复，使用ocrconfig -showbackup命令查找OCR备份文件路径，使用以下命令进行恢复： 
+
+<pre>
+#ocrconfig –restore file_name
+</pre>
+
+ 在此及节点上停止Clusterware运行： 
+
+<pre>
+#crsctl stop crs -f
+</pre>
+
+ 重新在所有节点启动CRS 
+
+<pre>
+#crsctl start crs
+</pre>
+
+ 最后，再次通过ocrcheck验证OCR文件完整性。
+<h2>IV．OCR文件多份存储</h2>
+查找OCR文件存储位置： 
+
+```
+[root@ora11g:/root]# cat /etc/oracle/ocr.loc
+ocrconfig_loc=+OCR 
+local_only=FALSE 
+```
+ 在磁盘组+DATA中再创建一个OCR文件： 
+
+```
+#ocrconfig -add +DATA
+[root@ora11g:/root]# /u01/app/grid/product/11.2.0.4/bin/ocrconfig -add +DATA 
+[root@ora11g:/root]# cat /etc/oracle/ocr.loc 
+#Device/file  getting replaced by device +DATA 
+ocrconfig_loc=+OCR 
+ocrmirrorconfig_loc=+DATA 
+local_only=false 
+[root@ora11g:/root]# 
+```
+ 删除命令如下： 
+
+```
+[root@ora11g:/root]# /u01/app/grid/product/11.2.0.4/bin/ocrconfig -delete +DATA
+[root@ora11g:/root]# cat /etc/oracle/ocr.loc 
+#Device/file +DATA being deleted 
+ocrconfig_loc=+OCR 
+local_only=false 
+[root@ora11g:/root]# 
+```
+ V．迁移OCR 
+
+ 以下命令把OCR文件从磁盘组DATA迁移到磁盘组DATABASE： 
+
+<pre>#ocrconfig -replace +data -replacement +database</pre>
+
+
+ <b>EOF</b> 

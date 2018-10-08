@@ -1,0 +1,126 @@
+---
+layout: post
+title: 使用直方图(Histograms)
+categories:
+- oracle
+tags: 
+- tuning
+published: true
+comments: false
+date: 2013-06-15
+---
+<h3>1.何谓直方图</h3>
+<!--more-->
+<p>在分析表或索引时，直方图用于记录数据的分布。通过获得该信息，基于成本的优化器就可以决定使用将返回少量行的索引，而避免使用基于限制条件返回许多行的索引。直方图的使用不受索引的限制，可以在表的任何列上构建直方图。</p>
+<p>构造直方图最主要的原因就是帮助优化器在表中数据严重偏斜时做出更好的规划：例如，如果一到两个值构成了表中的大部分数据(数据偏斜)，相关的索引就可能无法帮助减少满足查询所需的I/O数量。创建直方图可以让基于成本的优化器知道何时使用索引才最合适，或何时应该根据WHERE子句中的值返回表中80％的记录。</p>
+
+<h3>2.何时使用直方图</h3>
+通常情况下在以下场合中建议使用直方图：
+<li>当Where子句引用了列值分布存在明显偏差的列时：当这种偏差相当明显时，以至于 WHERE 子句中的值将会使优化器选择不同的执行计划。这时应该使用直方图来帮助优化器来修正执行路径。（注意：如果查询不引用该列，则创建直方图没有意义。这种错误很常见，许多 DBA 会在偏差列上创建柱状图，即使没有任何查询引用该列。）</li>
+<li>当列值导致不正确的判断时：这种情况通常会发生在多表连接时，例如，假设我们有一个五项的表联接，其结果集只有 10 行。Oracle 将会以一种使第一个联接的结果集（集合基数）尽可能小的方式将表联接起来。通过在中间结果集中携带更少的负载，查询将会运行得更快。为了使中间结果最小化，优化器尝试在 SQL 执行的分析阶段评估每个结果集的集合基数。在偏差的列上拥有直方图将会极大地帮助优化器作出正确的决策。如优化器对中间结果集的大小作出不正确的判断，它可能会选择一种未达到最优化的表联接方法。因此向该列添加直方图经常会向优化器提供使用最佳联接方法所需的信息。</li>
+
+<h3>3.直方图种类</h3>
+<p>Oracle利用直方图来提高非均匀数据分布的选择率和技术的计算精度。
+但是实际上Oracle会采用另种不同的策略来生成直方图：其中一种是针对包含很少不同值的数据集；另一种是针对包含很多不同的数据集。
+Oracle会针对第一种情况生成频率直方图，针对第二种情况生成高度均衡直方图。
+通常情况下当BUCTET < 表的NUM_DISTINCT值得到的是HEIGHT BALANCED（高度平衡）直方图，而当BUCTET > 表的NUM_DISTINCT值的时候得到的是FREQUENCY（频率）直方图。
+</p>
+<h3>4.如何产生直方图</h3>
+当产生直方图时，指定一个大小，此大小跟BUCKET的数量有关。每一个BUCKET包含了关于栏位值信息及行数。
+```
+EXECUTE DBMS_STATS.GATHER_TABLE_STATS('scott','company',METHOD_OPT =>'FOR COLUMNS SIZE 10 company_code');
+```
+The preceding query will create a ten-bucket histogram on the COMPANY table, as shown in Figure 2-2. The values for the COMPANY_CODE column will be divided into the ten buckets as displayed in the figure. This example shows a large number (80 percent) of the company_code is equal to 1430. As is also shown in the figure, most of the width-balanced buckets contain only 3 rows; a single bucket contains 73 rows. In the height-balanced version of this distribution, each bucket has the same number of rows and most of the bucket endpoints are '1430', reflecting the skewed distribution of the data.
+<p>{% img "center" /images/histograms1.png %}</p>
+<h3>5.实验</h3>
+<h4>5.1.1创建实验表</h4>
+```
+SQL>createtableobj asselect* from dba_objects;
+SQL>createindexobj_id_idx on obj(object_id)onlinenologging;
+SQL>SELECTMAX(object_id),MIN(object_id)FROMobj;
+MAX(OBJECT_ID)		MIN(OBJECT_ID)
+————– 				————–
+58410              	2
+–制造不均匀数据分布
+SQL> UPDATE   obj
+        SET   object_id =1000
+ WHERE   object_id >100ANDobject_id <54000;
+SQL>commit;
+```
+<h4>5.1.2创建直方图</h4>
+```
+BEGIN
+   DBMS_STATS.gather_table_stats(cascade            =>TRUE,
+                                  degree             =>2,
+                                  estimate_percent   =>100,
+                                  force              =>TRUE,
+                                  ownname            =>'FUNG',
+                                  tabname            =>'OBJ');
+END;
+/
+```
+<p>在gather_table_stats方法中，默认的method_opt值为：FOR ALL COLUMNS SIZE AUTO，所以也是会收集直方图的统计信息（和oracle版本相关），其中degree 指定了并行度视主机的CPU 个数而定，estimate_percent 指定了采样比率，
+auto 目的是让oracle 来决定采样收集的比率，绘制直方图时会根据采样的数据分析结果来绘制，当然也可以人为指定采样比率。如： estimate_percent=>20 指定采样比率为20%，cascade=>true 指定收集相关表的索引的统计信息，该参数默认为false，因此
+使用dbms_stats 收集统计信息时默认是不收集表的索引信息的。</p>
+–注意：ENDPOINT_NUMBER ，ENDPOINT_VALUE 的分布情况
+```
+SQL>SELECT   *
+  FROM   user_histograms
+ WHERE   table_name ='OBJ'ANDcolumn_name ='OBJECT_ID';
+```
+<p>{% img /images/histograms2.png %}</p>
+```
+SQL>SELECTCOLUMN_NAME,HISTOGRAM FROMUSER_TAB_COLS WHERE TABLE_NAME='OBJ' AND column_name='OBJECT_ID';
+COLUMN_NAME          HISTOGRAM
+——————– 			——————————
+OBJECT_ID            HEIGHT BALANCED
+```
+<h4>5.1.3直方图执行计划</h4>
+<pre>SQL>selectobject_name from obj whereobject_id=100;</pre>
+<p>{% img /images/histograms3.png %}</p>
+       CBO选择index range scan。
+<pre>SQL>selectobject_name from obj whereobject_id=1000;</pre>
+<p>{% img /images/histograms4.png %}</p>
+通过直方图统计信息，Oracle知道object_id为1000的值大概占了数据量总量的80%以上，于是选择了全表扫描。
+<h4>5.1.4删除直方图执行计划</h4>
+```
+BEGIN
+   DBMS_STATS.gather_table_stats(
+      cascade            =>TRUE,
+      degree             =>2,
+      estimate_percent   =>100,
+      force              =>TRUE,
+      ownname            =>'FUNG',
+      tabname            =>'OBJ',
+      method_opt         =>'FOR ALL COLUMNS SIZE 1'
+   );
+END;
+/
+```
+删除直方图，设置method_opt：FOR ALL COLUMNS SIZE 1即可
+<p>检查结果</p>
+<p>{% img /images/histograms5.png %}</p>
+```
+SQL>SELECTCOLUMN_NAME,HISTOGRAM FROMUSER_TAB_COLS WHERE TABLE_NAME='OBJ'ANDcolumn_name='OBJECT_ID';
+COLUMN_NAME          HISTOGRAM
+——————– ——————————
+OBJECT_ID            NONE
+直方图信息已经被删除
+```
+<p>{% img /images/histograms6.png %}</p>
+仍然是index range scan，正确的。接下来看id=1000的执行计划：
+<p>{% img /images/histograms7.png %}</p>
+ 很明显，这次要全表扫描，结果Oracle仍然傻傻的使用索引扫描。
+
+
+
+
+
+
+
+
+
+
+
+
+

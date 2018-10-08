@@ -1,0 +1,186 @@
+---
+layout: post
+title: Oracle 10g Silent Installation On Redhat Linux
+categories:
+- oracle
+tags:
+- Installation
+published: true
+comments: false
+date: 2013-08-23
+---
+ 1. Oracle安装文件中有自带的response file，可以直接修改拿来使用。
+<!--more-->
+也可以使用以下命令录制response file并且以OUI方式正常安装，记录下的response file可以在未来安装中使用，可以在最后一步取消安装，这样就只会记录response file。可使用./runInstaller -help查看OUI的所有可选参数
+<pre>./runInstaller -record -destinationFile /tmp/10gR2.rsp</pre>
+2. 以response file静默安装数据库软件
+<pre>./runInstaller -silent -responseFile /tmp/10gR2.rsp</pre>
+INSTALL_TYPE的描述：
+<pre>
+#------------------------------------------------------------------------------
+#Name       : INSTALL_TYPE
+#Datatype   : String
+#Description: Installation type of the component.
+#
+#             The following choices are available. The value should contain
+#             only one of these choices.
+#             EE     : Enterprise Edition
+#             SE     : Standard Edition
+#             Custom : Custom
+#Example    : INSTALL_TYPE = "EE"
+#------------------------------------------------------------------------------
+# Name       : n_configurationOption
+# Datatype   : Number
+# Description: Determines the type of configuration to perform for the session.
+#
+#              This entry should be specified as an number.  The valid values
+#              that you can use map to the following options:
+#              1 - Create a Database
+#              2 - Configure an ASM instance
+#              3 - Install Software Only
+#
+# Example    : n_configurationOption=1</pre>
+</pre>
+部分执行结果，最后以root用户执行 <code>$ORACLE_BASE/oraInventory/orainstRoot.sh</code>，<code>$ORACLE_HOME/root.sh</code>
+<pre>
+-----------------------------------------------------------------------------
+Installation in progress (Mon Aug 19 16:48:08 CST 2013) 
+...............................................................  14% Done. 
+...............................................................  28% Done. 
+...............................................................  42% Done. 
+...............................................................  56% Done. 
+...............................................................  70% Done. 
+................                                                 74% Done. 
+Install successful 
+
+ Linking in progress (Mon Aug 19 16:55:10 CST 2013) 
+.                                                                74% Done. 
+Link successful 
+
+ Setup in progress (Mon Aug 19 17:00:30 CST 2013) 
+..................                                              100% Done. 
+Setup successful 
+
+ End of install phases.(Mon Aug 19 17:00:42 CST 2013)
+<strong>WARNING:The following configuration scripts  
+/u01/oracle/product/10gr2/root.sh 
+need to be executed as root for configuring the system.</strong><br /> 
+If you skip the execution of the configuration tools, the configuration will not be complete and the product wont function properly. <br />
+In order to get the product to function properly, you will be required to execute the scripts and the configuration tools after exiting the OUI. 
+
+ The installation of Oracle Database 10g was successful. 
+Please check '/opt/oraInventory/logs/silentInstall2013-08-19_04-47-30PM.log' for more details.
+</pre>
+3. 安装10.2.0.4补丁程序 修改<code>./Disk1/response/patch.rsp</code>，主要修改以下几个地方： 
+<pre>
+UNIX_GROUP_NAME="oinstall"
+FROM_LOCATION="/u01/10g/Disk1/stage/products.xml"
+ORACLE_HOME_NAME="OraDb10g_home1"
+ORACLE_HOME="/u01/oracle/product/10gr2"
+安装完成同样需执行$ORACLE_HOME/root.sh</pre>
+<pre>
+[ora10g@db12c:/home/ora10g]$ sqlplus "/as sysdba"
+SQL*Plus: Release 10.2.0.4.0 - Production on Mon Aug 19 17:36:57 2013 
+Copyright (c) 1982, 2007, Oracle.  All Rights Reserved. 
+Connected to an idle instance.
+</pre> 
+4.	自定义数据库静默安装 
+<li>a)	利用OUI图形界面创建create database的template</li> 
+<li>b)	选择custom database</li> 
+<li>c)	其他按照需求自定义</li> 
+<li>d)	最后一步取消create database选项，改为选择create template</li>
+<li>e)	创建后模版文件位置：$ORACLE_HOME/assistants/dbca/templates</li> 
+5.	修改安装文件内response文件dbca.rsp，主要修改<code>GDBNAME</code>、<code>SID</code>及<code>TEMPLATENAME</code>三个选项。如果需要使用Oracle Enterprise Manager，则还需要修改以下参数如下： 
+```
+EMCONFIGURATION="LOCAL"  
+SYSMANPASSWORD="password"   
+DBSNMPPASSWORD="password"
+```
+6.	执行以下命令静默创建数据库
+<pre>
+[ora10g@db12c:/home/ora10g]$ dbca -silent -createdatabase -responseFile ./dbca.rsp
+Creating and starting Oracle instance
+1% complete
+2% complete
+5% complete
+Creating database files
+6% complete
+11% complete
+Creating data dictionary views
+12% complete
+14% complete
+16% complete
+17% complete
+18% complete
+19% complete
+20% complete
+23% complete
+25% complete
+26% complete
+27% complete
+28% complete
+Adding Oracle JVM
+29% complete
+37% complete
+46% complete
+54% complete
+56% complete
+Adding Oracle XML DB
+58% complete
+59% complete
+60% complete
+61% complete
+66% complete
+67% complete
+Adding Oracle Intermedia
+69% complete
+84% complete
+Completing Database Creation
+85% complete
+87% complete
+89% complete
+94% complete
+99% complete
+100% complete
+Look at the log file "/u01/oracle/product/10gr2/cfgtoollogs/dbca/ora10g/ora10g.log" for further details.
+</pre>
+7.	以文本模式编辑listener.ora </br>
+8.	验证数据库 
+```
+[ora10g@db12c:/home/ora10g]$ sqlplus "/as sysdba" 
+SQL*Plus: Release 10.2.0.4.0 - Production on Fri Aug 23 12:05:48 2013 
+Copyright (c) 1982, 2007, Oracle.  All Rights Reserved. 
+Connected to: 
+Oracle Database 10g Enterprise Edition Release 10.2.0.4.0 - 64bit Production 
+With the Partitioning, OLAP, Data Mining and Real Application Testing options 
+
+SQL> col file_name for a50 
+SQL> col tablespace_name for a30 
+SQL> set linesize 200 
+SQL> set pagesize 200 
+SQL> select file_id,file_name,tablespace_name  
+  2  from dba_data_files order by tablespace_name; 
+
+    FILE_ID FILE_NAME                                          TABLESPACE_NAME 
+---------- -------------------------------------------------- ------------------------------ 
+         3 /oradata/ora10g/sysaux01.dbf                       SYSAUX 
+         1 /oradata/ora10g/system01.dbf                       SYSTEM 
+         2 /oradata/ora10g/undotbs01.dbf                      UNDOTBS1 
+         4 /oradata/ora10g/users01.dbf                        USERS 
+
+SQL> select file_id,file_name,tablespace_name from dba_temp_files; 
+
+    FILE_ID FILE_NAME                                          TABLESPACE_NAME 
+---------- -------------------------------------------------- ------------------------------ 
+         1 /oradata/ora10g/temp01.dbf                         TEMP 
+SQL> col member for a50 
+SQL> select * from v$logfile 
+  2  / 
+
+     GROUP# STATUS  TYPE    MEMBER                                             IS_ 
+---------- ------- ------- -------------------------------------------------- --- 
+         1         ONLINE  /oradata/ora10g/redo01.log                         NO 
+         2         ONLINE  /oradata/ora10g/redo02.log                         NO 
+         3         ONLINE  /oradata/ora10g/redo03.log                         NO 
+```
+ 

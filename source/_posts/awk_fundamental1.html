@@ -1,0 +1,547 @@
+---
+layout: post
+title: ! '[shell学习笔记]awk基础1'
+categories:
+- linux
+tags:
+- shell
+published: true
+comments: false
+date: 2013-09-27
+---
+ awk是一种用于处理数据和生成报告的UNIX编程语言。nawk是awk的新版本，gawk是基于Linux的GNU版本。
+<!--more-->
+awk 以逐行方式扫描文件，从第一行到最后一行，以查找匹配某个特定模式的问本行，并对这些文本执行(括号在花括号中的)指定动作。如果只给出模式而未指定动作，则所有该匹配的模式的行都显示在屏幕上；如果只指定动作而未定义模式，会对所有输入行指定指定动作。
+<h1>1.awk格式</h1>
+以下面这个文本为例，简单说明awk的用法。 
+```
+[root@linora shell]# cat employee 
+Tom Jones       4424    5/12/66 54335 
+Mary Adams      5346    11/4/63 28765 
+Sally Chang     1654    7/22/54 65000 
+Billy Black     1683    9/23/44 33650 
+[root@linora shell]# awk '/Tom/' employee 
+Tom Jones       4424    5/12/66 54335 
+```
+<b>说明：</b>
+打印含有模式Tom的行。
+```
+[root@linora shell]# awk '{print $1}' employee 
+Tom 
+Mary 
+Sally 
+Billy 
+```
+<b>说明：</b>
+打印文件第一个字段，字段从行的左端开始，以空白符分隔。如果需要自定义分隔符，则需加上-F的参数。 
+
+```
+[root@linora shell]# awk '/Tom/{print $1,$2}' employee 
+Tom Jones 
+```
+<b>说明：</b>
+打印含有模式Tom的第一个和第二个字段。注意，字段中间有逗号分隔，它在awk中映射为一个内部变量，称为输出字段分隔符(output field separator)，OFS默认为空格，逗号被OFS变量中存储的字符替换。 
+
+```
+[root@linora shell]# df |awk '$4>10240000' 
+Filesystem           1K-blocks      Used Available Use% Mounted on 
+/dev/sda3             28337624  14901832  11973076  56% / 
+```
+<b>说明：</b>
+df为文件系统磁盘剩余空间报告。df命令的输出通过pipe发给awk，如果其中某行的第四个字段大于10G，则该行被打印。 
+```
+[root@linora shell]# w |awk '/^oracle/{print $3}' 
+192.168.56.1 
+```
+<b>说明：</b>
+w命令是Linux下查看有哪些用户登录做了哪些事情的命令。通过pipe将w的输出命令传给awk，如果w结果含有以oracle开头的行，则打印其第三个字段，即查找以oracle用户登录的IP地址。
+<h1>2.格式化输出</h1>
+<h2>2.1.print函数</h2>
+<p>awk命令的操作部分被括在大括号重化工。print函数用于打印不需要特别编排格式简单输出。更为复杂的格式编排则要使用printf或sprintf函数。</p> 
+
+ <p> 在awk命令中，可以用{print}形式显式地调用print函数。其参数可以是变量、数值或字符串常量。字符串必须用双引号括起来。参数之间用逗号分隔，逗号等价于OFS中的值，默认情况下是空格。如果没有逗号分隔，那么所有参数将会被串在一起。</p> 
+
+```
+[root@linora shell]# date 
+Thu Sep 26 23:41:52 CST 2013 
+[root@linora shell]# date |awk '{print "Month:",$2 "\nYear:",$6}' 
+Month: Sep 
+Year: 2013 
+```
+上例中的“\n”为转义字符，见下表。
+<p align="left"><b>表2-1     print</b><b>函数使用的转义序列</b>  
+
+ <div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="163"><b>转义序列</b></td>
+<td valign="top" width="405"><b>含义</b></td>
+</tr>
+<tr>
+<td valign="top" width="163">\b</td>
+<td valign="top" width="405">退格</td>
+</tr>
+<tr>
+<td valign="top" width="163">\f</td>
+<td valign="top" width="405">换页</td>
+</tr>
+<tr>
+<td valign="top" width="163">\n</td>
+<td valign="top" width="405">换行</td>
+</tr>
+<tr>
+<td valign="top" width="163">\r</td>
+<td valign="top" width="405">回车</td>
+</tr>
+<tr>
+<td valign="top" width="163">\t</td>
+<td valign="top" width="405">制表符，即tab键</td>
+</tr>
+<tr>
+<td valign="top" width="163">\047</td>
+<td valign="top" width="405">八进制值47，即单引号</td>
+</tr>
+<tr>
+<td valign="top" width="163">\c</td>
+<td valign="top" width="405">c代表任一其他字符，如“\”</td>
+</tr>
+</tbody>
+</table>
+</div>
+```
+[root@linora shell]# awk '/Tom/{print "\t\tHave a nice day," $1,$2 "!!!"}' employee 
+Have a nice day,Tom Jones!!! 
+```
+<h2>2.2.printf函数</h2>
+<p> 打印输出时，可能需要指定字段间的空格数，从而把列排整齐。在print函数中使用制表符并不能保证得到想要的输出，因此可用printf来格式化特别输出。</p>  
+
+ <p> printf函数返回一个带格式的字符串给标准输出，其语句包括一个加引号的控制串，控制串中可能嵌有若干格式说明和修饰符。控制串后面跟一个逗号，之后是一列由逗号分隔的表达式。printf函数根据控制串中的说明编排这些表达式的格式，但printf不会在行尾自动换行，需要在控制串中提供转义字符\n。</p> 
+<p align="left"><b>表2-2     printf</b><b>使用的转义字符</b>  
+
+ <div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="187"><b>转义字符</b></td>
+<td valign="top" width="381"><b>定义</b></td>
+</tr>
+<tr>
+<td valign="top" width="187">c</td>
+<td valign="top" width="381">字符</td>
+</tr>
+<tr>
+<td valign="top" width="187">s</td>
+<td valign="top" width="381">字符串</td>
+</tr>
+<tr>
+<td valign="top" width="187">d</td>
+<td valign="top" width="381">十进制整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">ld</td>
+<td valign="top" width="381">十进制长整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">u</td>
+<td valign="top" width="381">十进制无符号整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">lu</td>
+<td valign="top" width="381">十进制无符号长整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">x</td>
+<td valign="top" width="381">十六进制整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">lx</td>
+<td valign="top" width="381">十六进制长整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">o</td>
+<td valign="top" width="381">八进制整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">lo</td>
+<td valign="top" width="381">八进制长整数</td>
+</tr>
+<tr>
+<td valign="top" width="187">e</td>
+<td valign="top" width="381">用科学计数法表示的浮点数</td>
+</tr>
+<tr>
+<td valign="top" width="187">f</td>
+<td valign="top" width="381">浮点数</td>
+</tr>
+<tr>
+<td valign="top" width="187">g</td>
+<td valign="top" width="381">选用e或者f中较短的一种形式</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p align="left"><b>表2-3     printf</b><b>的修饰符</b>  
+
+ <div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="187"><b>字符</b><b></b></td>
+<td valign="top" width="381"><b>定义</b></td>
+</tr>
+<tr>
+<td valign="top" width="187">-</td>
+<td valign="top" width="381">左对齐修饰符</td>
+</tr>
+<tr>
+<td valign="top" width="187">#</td>
+<td valign="top" width="381">显示8进制整数时在前面加个0显示16进制整数时在前面加0x</td>
+</tr>
+<tr>
+<td valign="top" width="187">+</td>
+<td valign="top" width="381">显示使用d、e、f、和g转换的整数时，加上正负号</td>
+</tr>
+<tr>
+<td valign="top" width="187">0</td>
+<td valign="top" width="381">用0而不是空白符来填充所显示的值</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p align="left"><b>表2-4     printf</b><b>的格式说明符</b>  
+
+ <div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="187"><b>格式说明符</b></td>
+<td valign="top" width="381"><b>功能</b></td>
+</tr>
+<tr>
+<td colspan="2" valign="top" width="568">假定x=’A’、y=15、z=2.3且$1=Bob Smith</td>
+</tr>
+<tr>
+<td valign="top" width="187">%c</td>
+<td valign="top" width="381">printf("The character is %c\n",x)output:The character is A</td>
+</tr>
+<tr>
+<td valign="top" width="187">%d</td>
+<td valign="top" width="381">printf("The boy is %d years old!\n",y)output: The boy is 15 years old!</td>
+</tr>
+<tr>
+<td valign="top" width="187">%e</td>
+<td valign="top" width="381">[root@linora shell]# echo "2.3" |awk '{printf("z is %e\n",$1)}'z is 2.300000e+00</td>
+</tr>
+<tr>
+<td valign="top" width="187">%f</td>
+<td valign="top" width="381">[root@linora shell]# echo "2.3" |awk '{printf("z is %f\n",$1)}'z is 2.300000</td>
+</tr>
+<tr>
+<td valign="top" width="187">%o</td>
+<td valign="top" width="381">[root@linora shell]# echo "15" |awk '{printf("z is %o\n",$1)}'z is 17</td>
+</tr>
+<tr>
+<td valign="top" width="187">%s</td>
+<td valign="top" width="381">printf("His name is %s\n",$1)打印字符串:His name is Bob smith</td>
+</tr>
+<tr>
+<td valign="top" width="187">%x</td>
+<td valign="top" width="381">[root@linora shell]# echo "15" |awk '{printf("y is %x\n",$1)}'y is f</td>
+</tr>
+</tbody>
+</table>
+</div>
+下面这个例子中，printf控制串里的pipe字符是文本的一部分，用于指示格式的开始与结束。 
+```
+[root@linora shell]# echo "UNIX"|awk '{printf "|%-15s|\n",$1}' 
+|UNIX           | 
+[root@linora shell]# echo "UNIX"|awk '{printf "|%15s|\n",$1}' 
+|           UNIX| 
+```
+通过以上输出控制，可以控制文本靠左靠右对齐，百分号让printf做好准备，它要打印一个占15格，向左对其的字符串，这个字符串夹在两个pipe符号间，并且以换行符结尾。百分号后的减号表示左对齐。无减号表示右对齐。 
+
+```
+[root@linora shell]# awk '{printf "The name is:%-15s ID is %8d\n",$1,$3}' employee 
+The name is:Tom             ID is     4424 
+The name is:Mary            ID is     5346 
+The name is:Sally           ID is     1654 
+The name is:Billy           ID is     1683 
+```
+上例中，要打印的字符放置在两个引号之间。第一个格式说明符是%-15s，它对应的参数是$1。格式%8d表示在字符串的这个位置打印$3的十进制值。这个整数占8格，向右对齐。也可以将加引号的字符串和表达式放在圆括号内。 
+```
+awk '{printf ("The name is:%-15s ID is %8d\n",$1,$3)}' employee 
+```
+<h2>2.3.记录与字段</h2>
+awk在默认情况下，每一行称为一条记录，以换行符结束，输入和输出的分隔符都是换行符，分别保存在awk的内置变量ORS和RS中。同时awk用$0代表整条记录，变量NR保存每条记录的记录号，每处理完一条记录NR自动加1. 
+```
+[root@linora shell]# awk '{print NR,$0}' employee 
+1 Tom Jones     4424    5/12/66 54335 
+2 Mary Adams    5346    11/4/63 28765 
+3 Sally Chang   1654    7/22/54 65000 
+4 Billy Black   1683    9/23/44 33650 
+```
+每条记录都是由称为字段的词组成，字段由美元符号和字段编号做标记。默认情况下，字段间用空白符(空格或者制表符)分隔。每条记录的字段值保存在内置变量NF中，NF的值因行而异。 
+```
+[root@linora shell]# awk '{print NR,$1,$2,$3,NF}' employee 
+1 Tom Jones 4424 5 
+2 Mary Adams 5346 5 
+3 Sally Chang 1654 5 
+4 Billy Black 1683 5 
+```
+
+ awk的内置变量FS中保存了输入字段分隔符的值。默认用空格或者制表符，并且删除各字段前多于的空格或制表符。同时，可以使用-F参数修改FS值。 
+```
+[root@linora shell]# awk '/oracle/{print $1}' /etc/passwd 
+oracle:x:500:500::/home/oracle:/bin/bash 
+[root@linora shell]# awk -F: '/oracle/{print $1,$2,$3}' /etc/passwd 
+oracle x 500 
+```
+上例中，使用-F参数，后面紧跟冒号来取代默认的输入分隔符。 
+
+ 我们也可以指定多个输入字段分隔符，如果有多个字符被用于字段分隔符FS，则FS对应是一个正则表达式字符串，并且被括在方括号内。下面的例子中(注意冒号前有空格)，FS的值是空格，冒号或者制表符。 
+```
+[root@linora shell]# sed -n '/Tom/p' employee2 
+Tom Jones:4424:5/12/66:54335 
+[root@linora shell]# awk -F'[ :\t]' '/Tom/{print $1,$2,$3}' employee2 
+Tom Jones 4424 
+```
+输出分隔符被保存在内置变量OFS中，默认都是单个空格。如果需要修改OFS值，可以参照以下例子。但无论OFS如何设置，print语句中用于分隔字段的逗号，在输出时候都被转换成OFS的值。 
+```
+[root@linora shell]# awk -F: 'BEGIN {OFS=":"}/oracle/{print $1,$2,$3}' /etc/passwd 
+oracle:x:500 
+```
+<h1>3.awk内置变量</h1>
+<p align="left"><b>表2-5     awk</b><b>内置变量</b>  
+
+ <div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="67"><b>变量</b></td>
+<td valign="top" width="217"><b>描述</b></td>
+<td valign="top" width="59"><b>变量</b></td>
+<td valign="top" width="225"><b>描述</b></td>
+</tr>
+<tr>
+<td valign="top" width="67">$n</td>
+<td valign="top" width="217">当前记录的第n个字段，字段间由FS分隔</td>
+<td valign="top" width="59">FIELDWIDTHS</td>
+<td valign="top" width="225">字段宽度列表</td>
+</tr>
+<tr>
+<td valign="top" width="67">$0</td>
+<td valign="top" width="217">完整的输入记录</td>
+<td valign="top" width="59">ARGC</td>
+<td valign="top" width="225">命令行参数的数目</td>
+</tr>
+<tr>
+<td valign="top" width="67">ARGIND</td>
+<td valign="top" width="217">命令行当前的文件的位置</td>
+<td valign="top" width="59">ARGV</td>
+<td valign="top" width="225">包含命令行参数的数组</td>
+</tr>
+<tr>
+<td valign="top" width="67">CONVFMT</td>
+<td valign="top" width="217">数字转换格式，默认为%.6g</td>
+<td valign="top" width="59">ENVIRON</td>
+<td valign="top" width="225">环境变量关联数组</td>
+</tr>
+<tr>
+<td valign="top" width="67">ERRNO</td>
+<td valign="top" width="217">最后一个系统错误的描述</td>
+<td valign="top" width="59">FILENAME</td>
+<td valign="top" width="225">当前文件名</td>
+</tr>
+<tr>
+<td valign="top" width="67">FNR</td>
+<td valign="top" width="217">同NR，但相对于当前文件</td>
+<td valign="top" width="59">FS</td>
+<td valign="top" width="225">输入字段分隔符</td>
+</tr>
+<tr>
+<td valign="top" width="67">NF</td>
+<td valign="top" width="217">当前记录的字段数</td>
+<td valign="top" width="59">IGNORECASE</td>
+<td valign="top" width="225">如果为真，则忽略大小写</td>
+</tr>
+<tr>
+<td valign="top" width="67">NR</td>
+<td valign="top" width="217">当前记录数</td>
+<td valign="top" width="59">OFMT</td>
+<td valign="top" width="225">数字的输出格式，默认%.6g</td>
+</tr>
+<tr>
+<td valign="top" width="67">OFS</td>
+<td valign="top" width="217">输出字段分隔符</td>
+<td valign="top" width="59">ORS</td>
+<td valign="top" width="225">输出记录分隔符</td>
+</tr>
+<tr>
+<td valign="top" width="67">RLENGTH</td>
+<td valign="top" width="217">由match函数所匹配的字符串长度</td>
+<td valign="top" width="59">RSTART</td>
+<td valign="top" width="225">由match函数所匹配的字符串的第一个位置</td>
+</tr>
+<tr>
+<td valign="top" width="67">RS</td>
+<td valign="top" width="217">输入记录分隔符</td>
+<td valign="top" width="59">SUBSEP</td>
+<td valign="top" width="225">数组下标分隔符</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h1>4.模式与操作</h1>
+awk模式用来控制对输入的文本行执行什么操作。模式由正则表达式、判别条件真伪的表达式或者两者的组合构成。awk默认操作是打印所有表达式为真的文本行。如果模式表达式含有if的意思，就不必用花括号把它括起来。 
+```
+[root@linora shell]# awk '/Tom/' employee 
+Tom Jones       4424    5/12/66 54335 
+```
+操作(action)是花括号中以分号分隔的语句。如果操作前面有个模式，则该模式控制执行操作的时间。同一行的多条语句由分号分隔，独占一行的语句则以换行符分隔。
+<h1>5.正则表达式</h1>
+对awk而言，正则表达式是置于两个斜杠之间、由字符组组成的模式。Awk支持使用(与egrep相同的)正则表达式元字符对正则表达式进行某种方式的修改。如果输入行中的某个字符串与正则表达式相匹配，则最终条件为真，于是执行与该表达式关联的所有操作，如果没有指定操作，则打印与正则表达式匹配的记录。
+<p align="left"><b>表2-6     awk</b><b>的正则表达式元字符</b>  
+
+ <div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="127"><b>元字符</b><b></b></td>
+<td valign="top" width="441"><b>说明</b></td>
+</tr>
+<tr>
+<td valign="top" width="127">^</td>
+<td valign="top" width="441">在串首匹配</td>
+</tr>
+<tr>
+<td valign="top" width="127">$</td>
+<td valign="top" width="441">在串尾匹配</td>
+</tr>
+<tr>
+<td valign="top" width="127">.</td>
+<td valign="top" width="441">匹配任意单个字符</td>
+</tr>
+<tr>
+<td valign="top" width="127">*</td>
+<td valign="top" width="441">匹配零个或者多个前导字符</td>
+</tr>
+<tr>
+<td valign="top" width="127">+</td>
+<td valign="top" width="441">匹配一个或者多个前导字符</td>
+</tr>
+<tr>
+<td valign="top" width="127">?</td>
+<td valign="top" width="441">匹配零个或者一个前导字符</td>
+</tr>
+<tr>
+<td valign="top" width="127">[ABC]</td>
+<td valign="top" width="441">匹配指定字符组中任意一个字符</td>
+</tr>
+<tr>
+<td valign="top" width="127">[^ABC]</td>
+<td valign="top" width="441">匹配任何一个不在指定字符组内的字符</td>
+</tr>
+<tr>
+<td valign="top" width="127">[A-Z]</td>
+<td valign="top" width="441">匹配A-Z之间的任一字符</td>
+</tr>
+<tr>
+<td valign="top" width="127">A|B</td>
+<td valign="top" width="441">匹配A或者B</td>
+</tr>
+<tr>
+<td valign="top" width="127">(AB)+</td>
+<td valign="top" width="441">匹配一个或者多个AB组合，即AB、ABAB等</td>
+</tr>
+<tr>
+<td valign="top" width="127">\*</td>
+<td valign="top" width="441">匹配星号本身</td>
+</tr>
+<tr>
+<td valign="top" width="127">&amp;</td>
+<td valign="top" width="441">用在替代串中，代表查找传中匹配到的内容</td>
+</tr>
+</tbody>
+</table>
+</div>
+表2-7列出的元字符，大多数版本的grep和sed都支持，但是任何版本的awk都不支持。对于POSIX支持的括号类正则表达式，除了gawk支持外，awk及nawk均不支持。
+<p align="left"><b>表2-7     awk</b><b>不支持的元字符</b>  
+
+ <div align="left">
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td valign="top" width="127"><b>元字符</b><b></b></td>
+<td valign="top" width="441"><b>说明</b></td>
+</tr>
+<tr>
+<td valign="top" width="127">\&lt;\&gt;</td>
+<td valign="top" width="441">单词定位</td>
+</tr>
+<tr>
+<td valign="top" width="127">\(\)</td>
+<td valign="top" width="441">向前引用</td>
+</tr>
+<tr>
+<td valign="top" width="127">\{\}</td>
+<td valign="top" width="441">重复</td>
+</tr>
+</tbody>
+</table>
+</div>
+匹配操作符(~)用于对记录或字段的表达式进行匹配。下例中，表示显示所有在第一个字段里匹配到Tom或者tom的行。 
+```
+[root@linora shell]# awk '$1 ~ /[tT]om/' employee 
+Tom Jones       4424    5/12/66 54335 
+```
+下面这个例子中，显示所有不是以ly结尾的行。 
+```
+[root@linora shell]# awk '$1 !~ /ly$/' employee 
+Tom Jones       4424    5/12/66 54335 
+Mary Adams      5346    11/4/63 28765 
+```
+<h1>6.awk脚本范例</h1>
+在awk脚本中，如果同一行中有多条语句或操作，必须用分号将它们分隔开。如果每条语句都在不同的行上，就不需要分号分开。如果操作跟在某个模式后面，它的左花括号就必须与该模式位于同一行，注释以#开头。 
+```
+[root@linora shell]# cat awkfile 
+#My first awk script 
+/Tom/{print "Tom's birthday is "$3} 
+/Mary/{print NR, $0} 
+/^Sally/{print "Hi,Sally. " $1 " has a salary of $" $4 "."} 
+[root@linora shell]# awk -F: -f awkfile employee2 
+Tom's birthday is 5/12/66 
+2 Mary Adams:5346:11/4/63:28765 
+Hi,Sally. Sally Chang has a salary of $65000. 
+```
+第一行以#开头，表示是注释。 
+第二行表示查找模式含有Tom的行，并且通过print函数打印”Tom’s birthday is”和该行的第三个字段的值。 
+第三行，查找含有模式Mary的行，打印整行，并且加上记录号。 
+第四行，查找以Sally开头的行，依次打印”Hi Sally.”、该行第一个字段值、字符串”has a salary of $”和该行第四个字段的值。
+<pre>
+Write an awk script called facts that
+a.Prints full names and phone numbers for the Savages.
+b.Prints Chet's contributions.
+c.Prints all those who contributed $250 the first month.
+</pre>
+答案(为了方便，作了个简单排序)： 
+```
+[root@linora shell]# cat facts 
+$2 ~ /Savage/{print "1st request:  " $1,$2,$3,$4} 
+/Chet/{print "2nd request:  " $5,$6,$7} 
+$5 ~ /^250$/{print "3rd request:  " $1,$2} 
+[root@linora shell]# awk -F"[ :]" -f facts lab3.data |sort -n 
+1st request:  Dan Savage (406) 298-7744 
+1st request:  Jody Savage (206) 548-1278 
+1st request:  Tom Savage (408) 926-3456 
+2nd request:  50 95 135 
+3rd request:  Archie McNichol 
+3rd request:  Guy Quigley 
+3rd request:  John Goldenrod 
+3rd request:  Mike Harrington 
+3rd request:  Nancy McNeil 
+3rd request:  Susan Dalsass 
+3rd request:  Tom Savage 
+```
+
+ <b>EOF</b> 

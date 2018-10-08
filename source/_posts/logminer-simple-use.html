@@ -1,0 +1,54 @@
+---
+layout: post
+title: Logminer简单用法
+categories:
+- oracle
+tags:
+- utility
+published: true
+comments: false
+date: 2013-06-15
+---
+<h3>1. 安装Logminer </h3>
+<!--more-->
+```
+SQL>@?/rdbms/admin/dbmslm.sql 
+SQL>@?/rdbms/admin/dbmslmd.sql 
+SQL>@?/rdbms/admin/dbmslms.sql
+```
+<h3>2. 创建数据字典 </h3>
+```
+SQL> alter system set utl_file_dir='/oradata/lgmnr' scope=spfile; 
+--restart the instance 
+-- Create a dictionary file  
+--   (init.ora parameter utl_file_dir must be set) 
+exec dbms_logmnr_d.build('mydictfile', '/oradata/lgmnr');
+```
+<h3>3. 添加日志</h3> 
+```
+-- Register log files, can be from a different db 
+--   (NEWFILE=start new list/ ADDFILE=add next file) 
+exec dbms_logmnr.add_logfile('/arch/1_141_810359695.dbf', dbms_logmnr.new);  
+exec dbms_logmnr.add_logfile('/arch/1_142_810359695.dbf', dbms_logmnr.addfile);  
+exec dbms_logmnr.add_logfile('/arch/1_143_810359695.dbf', dbms_logmnr.addfile);
+```
+<h3>4. 使用字典分析日志</h3> 
+```
+-- Start the logminer session 
+exec dbms_logmnr.start_logmnr(DictFileName => '/oradata/lgmnr/mydictfile');
+```
+<h3>5. 查看日志 </h3>
+```
+-- Query v_$logmnr_contents view to extract required info 
+select timestamp, sql_undo 
+from   sys.v_$logmnr_contents 
+where  seg_name = 'T'; 
+select operation,sql_redo,sql_undo 
+from v$logmnr_contents 
+where seg_owner='BBED' and seg_name='T' and rownum<=10;
+```
+<h3>6. 结束日志挖掘 </h3>
+```
+SQL> execute dbms_logmnr.end_logmnr;
+```
+<span>EOF</span> 

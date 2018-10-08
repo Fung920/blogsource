@@ -1,0 +1,102 @@
+---
+layout: post
+title: Create database with command line
+categories:
+- oracle
+tags:
+- Installation
+published: true
+comments: false
+date: 2013-08-27
+---
+1.	Setting environment variables, ORACLE_SID,ORACLE_BASE,ORACLE_HOME ect., see ~/.bash_profile
+<!--more-->
+```
+export EDITOR=vi 
+export TMP=/tmp 
+export TMPDIR=$TMP 
+export ORACLE_BASE=/u01/oracle  
+export ORACLE_HOME=$ORACLE_BASE/product/11gr2 
+export JAVA_HOME=$ORACLE_HOME/jdk 
+export ORACLE_SID=ora11g 
+export ORACLE_TERM=xterm 
+export PATH=/usr/sbin:$ORACLE_HOME/bin:$JAVA_HOME:$PATH 
+export ORA_NLS11=$ORACLE_HOME/nls/data 
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib 
+export CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib 
+export NLS_DATE_FORMAT="yyyy-mm-dd HH24:MI:SS" 
+export NLS_LANG=AMERICAN_AMERICA.ZHS16GBK 
+export PS1='[$LOGNAME@$HOSTNAME:$PWD]$ ' 
+umask 022
+```
+2.	Create a password with orapwd command,remember that,in 11g,password is case-sensitive
+<pre>
+$orapwd file=$ORACLE_HOME/dbs/orapwora11g password=oracle force=y
+</pre>
+3.	Create an initialization parameter file
+```
+$vi $ORACLE_HOME/dbs/initora11g.ora 
+DB_NAME=ora11g 
+CONTROL_FILE='/oradata/ora11g/control01.ctl','/oradata/ora11g/control02.ctl','/oradata/ora11g/control03.ctl' 
+DB_BLOCK_SIZE=16384 
+PROCESSES=300 
+open_cursors=300 
+remote_login_passwordfile='EXCLUSIVE' 
+undo_tablespace='UNDOTBS1' 
+UNDO_MANAGEMENT='AUTO' 
+audit_file_dest='/opt/oracle/admin/ora11g/adump' 
+compatible ='11.2.0'
+```
+4.	Connect to the Instance
+<pre>
+$sqlplus / as sysdba
+</pre>
+5.	Create spfile from pfile 
+<pre>
+SQL> create spfile from pfile='$ORACLE_HOME/dbs/initora11g.ora'; 
+</pre>
+6.	startup the instance in nomount mode 
+<pre>
+SQL> startup nomount; 
+</pre>
+7.	Issue the CREATE DATABASE Statement
+```
+spool createdb.log 
+CREATE DATABASE ora11g 
+   USER SYS IDENTIFIED BY oracle 
+   USER SYSTEM IDENTIFIED BY oracle 
+   LOGFILE GROUP 1 
+('/oradata/ora11g/redo01a.log','/oradata/ora11g/redo01b.log') SIZE 100M, 
+           GROUP 2 
+('/oradata/ora11g/redo02a.log','/oradata/ora11g/redo02b.log') SIZE 100M, 
+           GROUP 3 
+('/oradata/ora11g/redo03a.log','/oradata/ora11g/redo03b.log') SIZE 100M 
+   MAXLOGFILES 10 
+   MAXLOGMEMBERS 5 
+   MAXLOGHISTORY 1 
+   MAXDATAFILES 300 
+   CHARACTER set ZHS16GBK 
+   NATIONAL CHARACTER SET AL16UTF16 
+   EXTENT MANAGEMENT LOCAL 
+   DATAFILE '/oradata/ora11g/system01.dbf' SIZE 325M REUSE 
+   SYSAUX DATAFILE '/oradata/ora11g/sysaux01.dbf' SIZE 325M REUSE 
+   DEFAULT TABLESPACE users 
+      DATAFILE '/oradata/ora11g/users01.dbf' 
+      SIZE 500M REUSE AUTOEXTEND ON MAXSIZE UNLIMITED 
+   DEFAULT TEMPORARY TABLESPACE tempts1 
+      TEMPFILE '/oradata/ora11g/temp01.dbf' 
+      SIZE 20M REUSE 
+   UNDO TABLESPACE UNDOTBS1 
+      DATAFILE '/oradata/ora11g/undotbs01.dbf' 
+      SIZE 200M REUSE AUTOEXTEND ON MAXSIZE UNLIMITED; 
+exit 
+spool off
+```
+8.	Run Scripts to Build Data Dictionary Views
+```
+@?/rdbms/admin/catalog.sql 
+@?/rdbms/admin/catproc.sql 
+@?/sqlplus/admin/pupbld.sql
+```
+
+<p>Reference:Oracle® Database Administrator's Guide 11g Release 2 (11.2)</p>

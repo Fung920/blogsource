@@ -1,0 +1,120 @@
+---
+layout: post
+title: 数据文件权限导致DataGuard无法同步
+categories:
+- oracle
+tags:
+- ora01111
+- ora01119
+published: true
+comments: false
+date: 2013-08-29
+---
+<h3> 1.	现象 </h3>
+备库执行rman报以下错误：
+<!--more-->
+```
+Starting backup at 29-AUG-13 
+could not read file header for datafile 25  
+error reason 1 
+could not read file header for datafile 25  
+error reason 1 
+released channel:  
+sbt1RMAN-00571: =========================================================== 
+RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS =============== 
+RMAN-00571: =========================================================== 
+RMAN-03002: failure of backup command at 08/29/2013 00:00:08 
+RMAN-06056: could not access datafile 25 
+RMAN>  
+RMAN> 2> 3> 4> 5> 6> 7> 8>
+```
+<h3>2.	诊断</h3> 
+查询备库alert日志，发现六天前出现如下错误：
+```
+WARNING: File being created with same name as in Primary 
+Existing file may be overwritten 
+File #25 added to control file as 'UNNAMED00025'. 
+Originally created as: 
+'/dev/rLNT_TXNIDX_01' 
+Recovery was unable to create the file as: 
+'/dev/rLNT_TXNIDX_01' 
+Errors with log /oradata/szdb/archive/1_425944_652903983.arc 
+MRP0: Background Media Recovery terminated with error 1119 
+Fri Aug 23 17:20:53 BEIST 2013 
+Errors in file /oracle/admin/szdb/bdump/stdszdb_mrp0_647254.trc: 
+ORA-01119: error in creating database file '/dev/rLNT_TXNIDX_01' 
+ORA-27041: unable to open file 
+IBM AIX RISC System/6000 Error: 13: Permission denied 
+Additional information: 11 
+Some recovered datafiles maybe left media fuzzy 
+Media recovery may continue but open resetlogs may fail 
+Fri Aug 23 17:20:55 BEIST 2013 
+Errors in file /oracle/admin/szdb/bdump/stdszdb_mrp0_647254.trc: 
+ORA-01119: error in creating database file '/dev/rLNT_TXNIDX_01' 
+ORA-27041: unable to open file 
+IBM AIX RISC System/6000 Error: 13: Permission denied 
+Additional information: 11 
+Fri Aug 23 17:20:55 BEIST 2013 
+MRP0: Background Media Recovery process shutdown (stdszdb)
+```
+跟客户沟通，发现在23号主库添加过数据文件，但是在备库端没有赋予相应权限，等后面改过来后，MRP进程已经被shutdown了。 
+<h3>3.	解决思路 </h3>
+日志传输仍然是正常的，尝试重启MRP进程： 
+```
+  alter database recover managed standby database cancel; 
+  alter database recover managed standby database finish; 
+```
+报错如下： 
+```
+SQL> alter database recover managed standby database finish; 
+alter database recover managed standby database finish 
+*
+ERROR at line 1: 
+ORA-00283: recovery session canceled due to errors 
+ORA-01111: name for data file 25 is unknown - rename to correct file 
+ORA-01110: data file 25: '/oracle/product/10.2.0/db_1/dbs/UNNAMED00025' 
+ORA-01157: cannot identify/lock data file 25 - see DBWR trace file 
+ORA-01111: name for data file 25 is unknown - rename to correct file 
+ORA-01110: data file 25: '/oracle/product/10.2.0/db_1/dbs/UNNAMED00025' 
+```
+尝试在备机重建数据文件： 
+```
+SQL> select file#，name from v$datafile where file#=25; 
+SQL> alter database create datafile '/oracle/product/10.2.0/db_1/dbs/UNNAMED00025' as '/dev/rLNT_TXNIDX_01'; 
+alter database create datafile '/oracle/product/10.2.0/db_1/dbs/UNNAMED00025' as '/dev/rLNT_TXNIDX_01' 
+*
+ERROR at line 1: 
+ORA-01275: Operation CREATE DATAFILE is not allowed if standby file management is automatic. 
+```
+最后将Standby file management修改为manual，再重新创建数据文件即可。操作如下： 
+```
+alter system set standby_file_management=manual; 
+alter database create datafile '/oracle/product/10.2.0/db_1/dbs/UNNAMED00025' as '/dev/rLNT_TXNIDX_01'; 
+alter database recover managed standby database cancel; 
+alter database recover managed standby database disconnect from session; 
+alter system set standby_file_management='auto' scope=both; 
+```
+
+ <h3>4.	结果 </h3>
+查询Standby alert日志，发现已经开始同步：
+```
+Thu Aug 29 14:29:53 BEIST 2013 
+Media Recovery Log /oradata/szdb/archive/1_426095_652903983.arc 
+Media Recovery Log /oradata/szdb/archive/2_335064_652903983.arc
+```
+在主备端各自查询最大log sequence： 
+```
+select thread#,max(sequence#) from v$log_history group by thread#; 
+   	THREAD#	MAX(SEQUENCE#) 
+1	1	428326 
+2	2	336500 
+
+    THREAD# MAX(SEQUENCE#) 
+---------- -------------- 
+         1         426090 
+         2         335062 
+```
+日志已经在同步，但是因为相差时间太久，需要时间才能同步完。 <br />
+
+<b> EOF </b>
+ 

@@ -1,0 +1,412 @@
+---
+layout: post
+title: RMAN RAC异机恢复
+categories:
+- oracle
+tags:
+- rac
+- recovery
+- rman
+published: true
+comments: false
+date: 2013-07-03
+---
+ <h2>1 前期准备工作</h2>
+<!--more-->
+1.1 主库RAC数据库 
+数据库：<b>erp1</b><b>、erp2</b>
+归档路径：<b>/archlog01</b><b>、/archlog02</b>
+主库查找数据文件路径： 
+<pre>SQL>select name from v$datafile;</pre>
+1.2 备库数据文件规划 
+数据文件路径：<b>/backup/oradata/app/erp </b><b> (</b><b>空间有</b><b>1000GB)</b>
+[说明]测试服务器数据库是单机模式，恢复后的数据文件采用文件系统。先创建目录erp
+<pre>$ mkdir –p /backup/oradata/app/erp</pre>
+<div>
+<h2>2 为备库创建初始化参数文件</h2>
+</div>
+2.1 [说明] 先为测试服务器创建相关文件目录，命令如下：
+<pre>$mkdir -p /backup/oradata/export/home/oracle/admin/erp/adump
+$mkdir -p /backup/oradata/export/home/oracle/admin/erp/bdump
+$mkdir -p /backup/oradata/export/home/oracle/admin/erp/cdump
+$mkdir -p /backup/oradata/export/home/oracle/admin/erp/dpdump
+$mkdir -p /backup/oradata/export/home/oracle/admin/erp/udump
+$mkdir -p /backup/oradata/app/erp/archivelog</pre>
+2.2 登录主库RAC任一台： 
+<pre>
+SQL> conn / as sysdba 
+Connected. 
+SQL> create pfile='/home/oracle/initerp.ora' from spfile; 
+File created. 
+</pre>
+2.3 把文件<code>/home/oracle/initerp.ora</code> 拷贝到备库路径 <code>/export/home/oracle/OraHome_1/dbs</code> <br />
+ 2.4 在备库修改/export/home/oracle/OraHome_1/dbs的initerp.ora文件，注意去掉RAC相关参数 
+ 2.5 在备库创建密码文件
+<pre>$  orapwd file=$ORACLE_HOME/dbs/orapwerp password=’www.sina.com’ entries=4</pre>
+<div>
+<h2>3 恢复控制文件</h2>
+</div>
+3.1 登录备份数据库,将数据库启动到nomount状态，如启动nomount状态成功则上一步的参数文件配置正确。 
+如启动nomount状态有错误，则需要检查上一步参数文件的配置是否正确。 
+<pre>
+SQL> conn / as sysdba 
+Connected to an idle instance. 
+SQL> startup nomount; 
+ORACLE instance started. 
+ Total System Global Area 1610612736 bytes 
+Fixed Size                  2056504 bytes 
+Variable Size             385879752 bytes 
+Database Buffers      1207959552 bytes 
+Redo Buffers             14716928 bytes 
+</pre> 
+3.2 控制文件的备份集需要到主库上执行下面命令查看：
+<pre> $rman target /
+RMAN>list backup of controlfile;
+…………………………….
+RMAN> list backup of controlfile;
+ BS Key  Type LV Size       Device Type Elapsed Time Completion Time 
+------- ---- -- ---------- ----------- ------------ --------------- 
+4225    Full    15.25M     SBT_TAPE    00:00:03     24-FEB-13 
+BP Key: 4223   Status: AVAILABLE  Compressed: NO  Tag: TAG20130224T041224 
+Handle: erp_ora_vls_full<erp_4277:808200744:1>.ctl   Media: 3d5212ac:50a0578f:0bec:001c 
+Control File Included: Ckp SCN: 9026777113   Ckp time: 24-FEB-13</erp_4277:808200744:1> 
+ BS Key  Type LV Size       Device Type Elapsed Time Completion Time 
+------- ---- -- ---------- ----------- ------------ --------------- 
+4226    Full    15.25M     SBT_TAPE    00:00:49     24-FEB-13 
+BP Key: 4224   Status: AVAILABLE  Compressed: NO  Tag: TAG20130224T041227 
+Handle: c-2428396893-20130224-00   Media: 3d5212ac:50a0578f:0bec:001c 
+Control File Included: Ckp SCN: 9026777171   Ckp time: 24-FEB-13
+</pre>
+3.3 备份集查看到主库做全库的备份，在备库使用rman恢复控制文件：
+<pre>$ rman target /
+RMAN>set DBID=2428396893
+RMAN>
+ run {
+allocate channel 'dev_0' type 'sbt_tape'
+parms 'SBT_LIBRARY=/opt/omni/lib/libob2oracle8_64bit.so,
+ENV=(OB2APPNAME=erp,OB2BARHOSTNAME=oratest)';
+restore controlfile to '/backup/oradata/app/erp/control01.ctl' from
+'erp_ora_vls_full<erp_4277:808200744:1>.ctl';
+release channel 'dev_0';
+}</erp_4277:808200744:1></pre>
+3.4 因为前面的initerp.ora中的参数指定了3个控制文件，我们可以通过命令拷贝2份即可：
+<pre>$ pwd
+/backup/oradata/app/erp
+$cp control01.ctl control02.ctl
+$cp control01.ctl control03.ctl</pre>
+<div>
+<h2>4 还原和恢复数据库文件</h2>
+</div>
+4.1 [说明] 生成数据文件对应路径脚本(在生产机上)： 
+<pre>
+SQL> col name format a40 
+SQL> set linesize 100 
+SQL> set pagesize 100 
+SQL> select 'set newname for datafile ' || file# || ' to ''' || 
+replace(name,'/dev/vgdata/rlverp_','/backup/oradata/app/erp/') || '.dbf'';' from v$datafile; 
+ 'SETNEWNAMEFORDATAFILE'||FILE#||' TO'''|| 
+REPLACE(NAME,'/DEV/VGDATA/RLVERP_','/ORADATA/APP/erp/')||' 
+---------------------------------------------------------------------------------------------------- 
+set newname for datafile 1 to '/backup/oradata/app/erp/system_2g.dbf'; 
+set newname for datafile 2 to '/backup/oradata/app/erp/undotbs1_16g.dbf'; 
+set newname for datafile 3 to '/backup/oradata/app/erp/sysaux_3g.dbf'; 
+set newname for datafile 4 to '/backup/oradata/app/erp/undotbs2_16g.dbf'; 
+set newname for datafile 5 to '/backup/oradata/app/erp/users_2g.dbf'; 
+set newname for datafile 6 to '/backup/oradata/app/erp/data01_200g.dbf'; 
+set newname for datafile 7 to '/backup/oradata/app/erp/data02_200g.dbf'; 
+set newname for datafile 8 to '/backup/oradata/app/erp/data03_32g.dbf'; 
+set newname for datafile 9 to '/backup/oradata/app/erp/data04_32g.dbf'; 
+set newname for datafile 10 to '/backup/oradata/app/erp/data05_32g.dbf'; 
+set newname for datafile 11 to '/backup/oradata/app/erp/data07_32g.dbf'; 
+set newname for datafile 12 to '/backup/oradata/app/erp/data06_32g.dbf'; 
+set newname for datafile 13 to '/backup/oradata/app/erp/data08_32g.dbf'; 
+set newname for datafile 14 to '/backup/oradata/app/erp/data09_32g.dbf'; 
+set newname for datafile 15 to '/backup/oradata/app/erp/data11_32g.dbf'; 
+set newname for datafile 16 to '/backup/oradata/app/erp/data10_32g.dbf'; 
+set newname for datafile 17 to '/backup/oradata/app/erp/data12_32g.dbf'; 
+set newname for datafile 18 to '/backup/oradata/app/erp/data13_32g.dbf'; 
+set newname for datafile 19 to '/backup/oradata/app/erp/data14_32g.dbf'; 
+set newname for datafile 20 to '/backup/oradata/app/erp/data15_32g.dbf'; 
+set newname for datafile 21 to '/backup/oradata/app/erp/data16_32g.dbf'; 
+set newname for datafile 22 to '/backup/oradata/app/erp/data17_32g.dbf'; 
+set newname for datafile 23 to '/backup/oradata/app/erp/data18_32g.dbf'; 
+set newname for datafile 24 to '/backup/oradata/app/erp/data19_32g.dbf'; 
+set newname for datafile 25 to '/backup/oradata/app/erp/data20_32g.dbf'; 
+set newname for datafile 26 to '/backup/oradata/app/erp/data21_32g.dbf'; 
+set newname for datafile 27 to '/backup/oradata/app/erp/data22_32g.dbf'; 
+set newname for datafile 28 to '/backup/oradata/app/erp/data23_32g.dbf'; 
+set newname for datafile 29 to '/backup/oradata/app/erp/data24_32g.dbf'; 
+set newname for datafile 30 to '/backup/oradata/app/erp/data25_32g.dbf'; 
+set newname for datafile 31 to '/backup/oradata/app/erp/data26_32g.dbf'; 
+set newname for datafile 32 to '/backup/oradata/app/erp/data27_32g.dbf'; 
+set newname for datafile 33 to '/backup/oradata/app/erp/data28_32g.dbf'; 
+ 33 rows selected. 
+</pre> 
+4.2 查生产机备份的archivelog
+<pre>$ rman target /
+RMAN> list backup of archivelog all;
+BS Key  Size       Device Type Elapsed Time Completion Time 
+------- ---------- ----------- ------------ --------------- 
+4219    647.75M    SBT_TAPE    00:00:07     23-FEB-13 
+BP Key: 4217   Status: AVAILABLE  Compressed: NO  Tag: TAG20130223T024428 
+Handle: erp_ora_vls_arch_del<erp_4271:808109136:1>.arc   Media:</erp_4271:808109136:1> 
+ List of Archived Logs in backup set 4219 
+Thrd Seq     Low SCN    Low Time  Next SCN   Next Time 
+---- ------- ---------- --------- ---------- --------- 
+2    6188    9016300687 23-FEB-13 9016565667 23-FEB-13 
+2    6189    9016565667 23-FEB-13 9017090490 23-FEB-13 
+2    6190    9017090490 23-FEB-13 9017155280 23-FEB-13
+</pre>
+4.3 测试机启动数据库到mount状态 
+<pre>
+SQL> alter database mount;
+
+Database altered. 
+</pre> 
+4.4 还原和恢复数据文件
+<pre>RMAN>
+run{
+allocate channel 'dev_0' type 'sbt_tape'
+parms 'SBT_LIBRARY=/opt/omni/lib/libob2oracle8_64bit.so,
+ENV=(OB2APPNAME=erp,OB2BARHOSTNAME=oratest)';
+allocate channel 'dev_1' type 'sbt_tape'
+parms 'SBT_LIBRARY=/opt/omni/lib/libob2oracle8_64bit.so,
+ENV=(OB2APPNAME=erp,OB2BARHOSTNAME=oratest)';
+set newname for datafile 1 to '/backup/oradata/app/erp/system_2g.dbf';
+set newname for datafile 2 to '/backup/oradata/app/erp/undotbs1_16g.dbf';
+set newname for datafile 3 to '/backup/oradata/app/erp/sysaux_3g.dbf';
+set newname for datafile 4 to '/backup/oradata/app/erp/undotbs2_16g.dbf';
+set newname for datafile 5 to '/backup/oradata/app/erp/users_2g.dbf';
+set newname for datafile 6 to '/backup/oradata/app/erp/data01_200g.dbf';
+set newname for datafile 7 to '/backup/oradata/app/erp/data02_200g.dbf';
+set newname for datafile 8 to '/backup/oradata/app/erp/data03_32g.dbf';
+set newname for datafile 9 to '/backup/oradata/app/erp/data04_32g.dbf';
+set newname for datafile 10 to '/backup/oradata/app/erp/data05_32g.dbf';
+set newname for datafile 11 to '/backup/oradata/app/erp/data07_32g.dbf';
+set newname for datafile 12 to '/backup/oradata/app/erp/data06_32g.dbf';
+set newname for datafile 13 to '/backup/oradata/app/erp/data08_32g.dbf';
+set newname for datafile 14 to '/backup/oradata/app/erp/data09_32g.dbf';
+set newname for datafile 15 to '/backup/oradata/app/erp/data11_32g.dbf';
+set newname for datafile 16 to '/backup/oradata/app/erp/data10_32g.dbf';
+set newname for datafile 17 to '/backup/oradata/app/erp/data12_32g.dbf';
+set newname for datafile 18 to '/backup/oradata/app/erp/data13_32g.dbf';
+set newname for datafile 19 to '/backup/oradata/app/erp/data14_32g.dbf';
+set newname for datafile 20 to '/backup/oradata/app/erp/data15_32g.dbf';
+set newname for datafile 21 to '/backup/oradata/app/erp/data16_32g.dbf';
+set newname for datafile 22 to '/backup/oradata/app/erp/data17_32g.dbf';
+set newname for datafile 23 to '/backup/oradata/app/erp/data18_32g.dbf';
+set newname for datafile 24 to '/backup/oradata/app/erp/data19_32g.dbf';
+set newname for datafile 25 to '/backup/oradata/app/erp/data20_32g.dbf';
+set newname for datafile 26 to '/oradata/app/erp/data21_32g.dbf';
+set newname for datafile 27 to '/oradata/app/erp/data22_32g.dbf';
+set newname for datafile 28 to '/oradata/app/erp/data23_32g.dbf';
+set newname for datafile 29 to '/oradata/app/erp/data24_32g.dbf';
+set newname for datafile 30 to '/oradata/app/erp/data25_32g.dbf';
+set newname for datafile 31 to '/oradata/app/erp/data26_32g.dbf';
+set newname for datafile 32 to '/oradata/app/erp/data27_32g.dbf';
+set newname for datafile 33 to '/oradata/app/erp/data28_32g.dbf';
+restore database;
+switch datafile all;
+release channel 'dev_0';
+release channel 'dev_1';
+}</pre> 
+  --还原Thread 2日志文件 <pre>
+RMAN>run{ 
+allocate channel 'dev_0' type 'sbt_tape' parms 'SBT_LIBRARY=/opt/omni/lib/libob2oracle8_64bit.so, 
+ENV=(OB2APPNAME=erp,OB2BARHOSTNAME=oratest)'; 
+allocate channel 'dev_1' type 'sbt_tape' parms 'SBT_LIBRARY=/opt/omni/lib/libob2oracle8_64bit.so, 
+ENV=(OB2APPNAME=erp,OB2BARHOSTNAME=oratest)'; 
+restore archivelog from logseq=6191 until logseq=6196 thread 2; 
+release channel 'dev_0'; 
+release channel 'dev_1'; 
+
+</pre>
+ --还原Thread 1日志文件 <pre>
+RMAN> run{ 
+allocate channel 'dev_0' type 'sbt_tape' parms 'SBT_LIBRARY=/opt/omni/lib/libob2oracle8_64bit.so, 
+ENV=(OB2APPNAME=erp,OB2BARHOSTNAME=oratest)'; 
+allocate channel 'dev_1' type 'sbt_tape' parms 'SBT_LIBRARY=/opt/omni/lib/libob2oracle8_64bit.so, 
+ENV=(OB2APPNAME=erp,OB2BARHOSTNAME=oratest)'; 
+restore archivelog from logseq=5908 until logseq=5911 thread 1; 
+release channel 'dev_0'; 
+release channel 'dev_1'; 
+}
+</pre>
+ --恢复数据 
+<pre>
+RMAN> recover database; 
+Starting recover at 21-JAN-13 
+allocated channel: ORA_DISK_1 
+channel ORA_DISK_1: sid=1120 devtype=DISK 
+ starting media recovery 
+ archive log thread 1 sequence 5690 is already on disk as file /backup/oradata/app/erp/archivelog/1_5690_725969838.dbf 
+archive log thread 2 sequence 5869 is already on disk as file /backup/oradata/app/erp/archivelog/2_5869_725969838.dbf 
+archive log filename=/backup/oradata/app/erp/archivelog/1_5690_725969838.dbf thread=1 sequence=5690 
+archive log filename=/backup/oradata/app/erp/archivelog/2_5869_725969838.dbf thread=2 sequence=5869 
+unable to find archive log 
+archive log thread=1 sequence=5691 
+RMAN-00571: =========================================================== 
+RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS =============== 
+RMAN-00571: =========================================================== 
+RMAN-03002: failure of recover command at 01/21/2013 17:44:49 
+RMAN-06054: media recovery requesting unknown log: thread 1 seq 5691 lowscn 8638094832
+</pre>
+<h2>5 为联机日志重命名和删除实例2的联机日志</h2>
+5.1 登录测试数据库，为联机日志重命名 
+<pre> 
+SQL> select member from v$logfile; 
+MEMBER 
+-------------------------------------------------------------------------------- 
+/dev/vgdata/rlverp_redo1_1_512m 
+/dev/vgdata/rlverp_redo2_1_512m 
+/dev/vgdata/rlverp_redo3_1_512m 
+/dev/vgdata/rlverp_redo4_1_512m 
+/dev/vgdata/rlverp_redo1_2_512m 
+/dev/vgdata/rlverp_redo2_2_512m 
+/dev/vgdata/rlverp_redo3_2_512m 
+/dev/vgdata/rlverp_redo4_2_512m 
+8 rows selected. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo1_1_512m' to '/backup/oradata/app/erp/redo01.log'; 
+Database altered. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo2_1_512m' to '/backup/oradata/app/erp/redo02.log'; 
+Database altered. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo3_1_512m' to '/backup/oradata/app/erp/redo03.log'; 
+Database altered. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo4_1_512m' to '/backup/oradata/app/erp/redo04.log'; 
+Database altered. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo1_2_512m' to '/backup/oradata/app/erp/redo05.log'; 
+Database altered. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo2_2_512m' to '/backup/oradata/app/erp/redo06.log'; 
+Database altered. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo3_2_512m' to '/backup/oradata/app/erp/redo07.log'; 
+Database altered. 
+SQL> alter database rename file '/dev/vgdata/rlverp_redo4_2_512m' to '/backup/oradata/app/erp/redo08.log'; 
+Database altered. 
+</pre> 
+5.2 登录测试服务器数据库库，删除线程2的联机日志 
+<pre>
+SQL> select THREAD#, STATUS, ENABLED from v$thread;
+
+ THREAD# STATUS ENABLED 
+---------- ------ -------- 
+1 OPEN   PUBLIC 
+2 OPEN   PUBLIC 
+SQL> select group# from v$log where THREAD#=2; 
+GROUP# 
+---------- 
+5
+8 
+7
+6 
+--打开数据库(resetlogs模式) 
+SQL> alter database open resetlogs; 
+Database altered. 
+--屏蔽线程2的联机日志 
+SQL>alter database disable thread 2; 
+Database altered. 
+ --删除线程2的联机日志 
+ SQL> alter database drop logfile group 5; 
+alter database drop logfile group 5 
+ * 
+ERROR at line 1: 
+ORA-01623: log 5 is current log for instance erp2 (thread 2) - cannot drop 
+ORA-00312: online log 5 thread 2: '/backup/oradata/app/erp/redo05.log' 
+ SQL> alter database drop logfile group 6; 
+Database altered. 
+SQL> alter database drop logfile group 7; 
+Database altered. 
+SQL> alter database drop logfile group 8; 
+alter database drop logfile group 8 
+ * 
+ERROR at line 1: 
+ORA-01624: log 8 needed for crash recovery of instance erp2 (thread 2) 
+ORA-00312: online log 8 thread 2: '/backup/oradata/app/erp/redo08.log' 
+ --如有日志不能删除，可以做下面的操作，再删除。下面是group 5和8不能删除 
+SQL> alter database clear unarchived logfile group 5; 
+Database altered. 
+SQL> alter database clear unarchived logfile group 8; 
+Database altered. 
+SQL> alter database drop logfile group 5; 
+Database altered. 
+SQL> alter database drop logfile group 8; 
+Database altered. 
+ --检查删除情况 
+SQL>select THREAD#, STATUS, ENABLED from v$thread; 
+THREAD# STATUS ENABLED 
+---------- ------ -------- 
+1 OPEN   PUBLIC 
+</pre>
+<div>
+<h2>6 修改undo表空间</h2>
+</div>
+检查undo表空间参数 
+<pre>
+SQL> show parameter undo; 
+NAME                                 TYPE        VALUE 
+------------------------------------ ----------- ------------------------------ 
+undo_management                      string      AUTO 
+undo_retention                       integer     900 
+undo_tablespace                      string      UNDOTBS1 
+ SQL>select tablespace_name from dba_tablespaces where contents='UNDO'; 
+TABLESPACE_NAME 
+------------------------------ 
+UNDOTBS1 
+UNDOTBS2 
+ SQL> drop tablespace UNDOTBS2 including contents and datafiles; 
+ Tablespace dropped. 
+</pre>
+<div>
+<h2>7 为临时表空间增加数据文件</h2>
+</div>
+检查temp表空间参数 
+<pre>
+SQL> select name from v$tempfile; 
+NAME 
+-------------------------------------------------------------------------------- 
+/dev/vgdata/rlverp_temp_10g 
+ SQL>select tablespace_name from dba_tablespaces where contents='TEMPORARY'; 
+TABLESPACE_NAME 
+------------------------------ 
+TEMP 
+ SQL> create temporary tablespace TEMP1 
+ 2  tempfile '/backup/oradata/app/erp/temp01.dbf' size 2000M; 
+ Tablespace created. 
+ SQL>alter database default temporary tablespace TEMP1; 
+Database altered. 
+ SQL> drop tablespace TEMP including contents and datafiles; 
+ Tablespace dropped 
+ --修改temp tablespace大小： 
+ SQL> alter database tempfile '/backup/oradata/app/erp/temp01.dbf' resize 3000M; 
+SQL>create temporary tablespace TEMP   tempfile '/backup/oradata/app/erp/temp.dbf' size 3000M; 
+alter database default temporary tablespace TEMP; 
+drop tablespace TEMP1 including contents and datafiles; 
+ </pre>
+<div>
+<h2>8说明</h2>
+</div>
+以 $ 开始的提示符是使用的oracle用户, 执行的命令。<br /> 
+ 以 # 开始的提示符是使用的root用户，执行的命令。 <br />
+ <b>建立在裸设备上的</b><b>datafile</b><b>恢复到文件系统时按照裸设备的大小创建，因此需要考虑文件系统空间是否够用。</b><b></b><br /> 
+ TIPS:前期收集工作很重要，做好前期收集工作，后面的就简单多了。此次恢复数据900G+，restore耗时3.5H，recover等耗时0.5H。<br />
+<h3>9补充</h3>
+ASM to ASM异机恢复遇到类似如下错误：
+<pre>
+RMAN-00571: ===========================================================
+RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+RMAN-00571: ===========================================================
+RMAN-03002: failure of restore command at 04/19/2011 11:00:46
+ORA-19504: failed to create file "+EBS_DATA"
+ORA-17502: ksfdcre:4 Failed to create file +EBS_DATA
+ORA-15001: diskgroup "EBS_DATA" does not exist or is not mounted
+ORA-15055: unable to connect to ASM instance
+ORA-15055: unable to connect to ASM instance
+ORA-19600: input file is control file (/qsynergy1/oradata/cntrl01.dbf)
+ORA-19601: output file is control file (+EBS_DATA)
+</pre>
+解决思路：   <br />
+1.ASM磁盘组权限不对，第一次没给Oracle用户加asmadmin权限，后面加了还是一样报错。   <br />
+2.ASM实例没起来，用grid用户进入asmcmd，lsdg发现所有group都是mounted状态。   <br />
+3.对比oracle用户及grid用户下$ORACLE_HOME/bin/oracle属性，发现grid下面此文件属性为777,应修改为chmod 6751 oracle   <br />
+再次重启还原任务，成功还原   
+<br />
+<b>EOF</b> 

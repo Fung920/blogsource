@@ -1,0 +1,555 @@
+---
+layout: post
+title: Detect And Correct Corruption in Oracle
+categories:
+- oracle
+tags: []
+published: true
+comments: false
+date: 2013-06-15
+---
+<p><div><span lang="EN-US">Refernce: <a href="http://www.oracle-base.com/articles/misc/detect-and-correct-corruption.php">http://www.oracle-base.com/articles/misc/detect-and-correct-corruption.php</a></span></div>
+<!--more-->
+<div><span lang="EN-US">Oracle</span><span>提供了几种方法去检测及修复</span><span lang="EN-US">Oracle</span><span>数据文件的坏块</span><span lang="EN-US">(corruption)</span><span>。</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">¨<span>         </span></span><!--[endif]--><span lang="EN-US">DBVerify</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">¨<span>         </span></span><!--[endif]--><span lang="EN-US">ANALYZE … VALIDATE STRUCTURE</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">¨<span>         </span></span><!--[endif]--><span lang="EN-US">DB_BLOCK_CHECKING</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">¨<span>         </span></span><!--[endif]--><span lang="EN-US">RMAN(BACKUP VALIDATE,RESTORE VALIDATE,VALIDATE)</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">¨<span>         </span></span><!--[endif]--><span lang="EN-US">Block Media Recovery</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">¨<span>         </span></span><!--[endif]--><span lang="EN-US">DBMS_REPAIR</span></div>
+<div><!--[if !supportLists]--><span lang="EN-US">¨<span>         </span></span><!--[endif]--><span lang="EN-US">Others</span></div>
+<h1><!--[if !supportLists]--><span lang="EN-US">1.<span>      </span></span><!--[endif]--><span lang="EN-US">DBVerify</span></h1>
+<div><span lang="EN-US">DBVerify</span><span>允许对</span><span lang="EN-US">offline</span><span>及</span><span lang="EN-US">Online</span><span>的数据文件进行物理数据结构的完整性检查。但只能针对数据文件或是在缓存中的数据块，不能对控制文件及日志文件进行验证。</span></div>
+```
+[oracle@linora:/home/oracle]$ dbv file=/oradata/linora/bbed01.dbf feedback=10000 blocksize=8192
+DBVERIFY: Release 10.2.0.4.0 - Production on Wed Jun 26 04:01:24 2013
+Copyright (c) 1982, 2007, Oracle.  All rights reserved.
+DBVERIFY - Verification starting : FILE = /oradata/linora/bbed01.dbf
+DBVERIFY - Verification complete
+Total Pages Examined         : 12800 
+Total Pages Processed (Data) : 1446 
+Total Pages Failing   (Data) : 0 
+Total Pages Processed (Index): 229 
+Total Pages Failing   (Index): 0 
+Total Pages Processed (Other): 11074 
+Total Pages Processed (Seg)  : 0 
+Total Pages Failing   (Seg)  : 0 
+Total Pages Empty            : 51 
+Total Pages Marked Corrupt   : 0 
+Total Pages Influx           : 0 
+Highest block SCN            : 3414890 (0.3414890)
+```
+<h2><span lang="EN-US"><a name="more"></a>1.1 </span><span>对数据文件的数据块检查<span lang="EN-US"> </span></span></h2>
+```
+BBED@linora>create table t as select * from user_objects;
+Table created. 
+--查找T表所在数据文件及开始的块ID及块数量 
+BBED@linora>select a.file_id,a.block_id,a.blocks,b.name 
+from dba_extents a,v$datafile b 
+where a.file_id=b.file# and a.owner='BBED' and a.segment_name='T';
+   FILE_ID   BLOCK_ID     BLOCKS NAME 
+---------- ---------- ---------- ------------------------------ 
+         9       1841          8 /oradata/linora/bbed01.dbf 
+```
+```
+---查出表中记录所在的块 
+BBED@linora>select distinct dbms_rowid.rowid_block_number(rowid) trowid from bbed.t;
+    TROWID 
+---------- 
+      1844 
+BBED@linora>col owner for a10 
+BBED@linora>col segment_name for a20 
+BBED@linora>col SEGMENT_TYPE for a10 
+BBED@linora>select owner,segment_name,segment_type,extent_id,file_id,block_id,bytes 
+from dba_extents 
+where owner='BBED'; 
+OWNER      SEGMENT_NAME         SEGMENT_TY  EXTENT_ID    FILE_ID   BLOCK_ID      BYTES 
+---------- -------------------- ---------- ---------- ---------- ---------- ---------- 
+BBED       PK_EMP               INDEX               0          9       1817      65536 
+BBED       INVALID_ROWS         TABLE               0          9        905      65536 
+BBED       T                    TABLE               0          9       1841      65536 
+BBED       BLOCK_LAB            TABLE               0          9       1825      65536 
+BBED       EMP                  TABLE               0          9       1809      65536 
+select substr('free space',1,10) owner 
+, substr(' ',1,20) segment 
+, file_id 
+, block_id 
+, blocks 
+, bytes/1024/1024 "SizeMb" 
+, (block_id+blocks-1)*8192/1024/1024 "FileSizeMb" 
+from dba_free_space 
+where tablespace_name = upper('&&tbs_name') 
+union 
+select substr(owner,1,10) 
+, substr(segment_name,1,20) 
+, file_id 
+, block_id 
+, blocks 
+, bytes/1024/1024 "SizeMb" 
+, (block_id+blocks-1)*8192/1024/1024 "FileSizeMb" 
+from dba_extents 
+where tablespace_name = upper('&&tbs_name') 
+order by 3,4;
+```
+<p>模拟数据坏块</p>
+---破坏有记录的数据块
+```
+[oracle@linora:/home/oracle]$ dd of=/oradata/linora/bbed01.dbf bs=8192 conv=notrunc seek=1844 <<EOF
+<abcde
+EOF
+0+1 records in
+0+1 records out
+15 bytes (15 B) copied, 0.000112 seconds, 134 kB/s
+--使用DBV进行检测
+[oracle@linora:/home/oracle]$ dbv file=/oradata/linora/bbed01.dbf feedback=10000 blocksize=8192
+DBVERIFY: Release 10.2.0.4.0 - Production on Wed Jun 26 04:29:12 2013
+Copyright (c) 1982, 2007, Oracle.  All rights reserved
+DBVERIFY - Verification starting : FILE = /oradata/linora/bbed01.dbf 
+Page 1844 is marked corrupt--1844块标记为坏块 
+Corrupt block relative dba: 0x02400734 (file 9, block 1844) 
+Bad header found during dbv: 
+Data in bad block: 
+ type: 97 format: 2 rdba: 0x68676665 
+ last change scn: 0x6e6d.6c6b6369 seq: 0xa flg: 0x04 
+ spare1: 0x63 spare2: 0x64 spare3: 0x0 
+ consistency value in tail: 0xe1c00602 
+ check value in block header: 0x117d 
+ computed block checksum: 0x2fe1
+..
+DBVERIFY - Verification complete
+Total Pages Examined         : 12800 
+Total Pages Processed (Data) : 1446 
+Total Pages Failing   (Data) : 0 
+Total Pages Processed (Index): 229 
+Total Pages Failing   (Index): 0 
+Total Pages Processed (Other): 11073 
+Total Pages Processed (Seg)  : 0 
+Total Pages Failing   (Seg)  : 0 
+Total Pages Empty            : 51 
+Total Pages Marked Corrupt   : 1 
+Total Pages Influx           : 0 
+Highest block SCN            : 3465666 (0.3465666)
+```
+<p><span lang="EN-US">=================================================</span><span lang="EN-US">=Pages</span><em><span lang="EN-US">--</span></em><em><span>表示数据块</span></em><span lang="EN-US"> </span></p>
+<p><span lang="EN-US">=Total Pages Examined </span><em><span lang="EN-US">--</span></em><em><span>表示文件中的数据块总数量</span></em></p>
+<p><span lang="EN-US">=Total Pages Processed</span><em><span lang="EN-US">--</span></em><em><span>表示已检查数据块的数量</span></em></p>
+<p><span lang="EN-US">=Total Pages Failing</span><em><span lang="EN-US">--</span></em><em><span>表示检查失败的数据块数量</span></em></p>
+<p><span lang="EN-US">=Total Pages Marked </span><span lang="EN-US">Corrupt</span><em><span lang="EN-US">--</span></em><em><span>表示数据块已损坏</span></em></p>
+<p><span lang="EN-US">=Total Pages Influx</span><em><span lang="EN-US">--</span></em><em><span>表示同一时间正在读和写的数据块数量。如果数据库是打开状态，当</span></em><em><span lang="EN-US">DBV</span></em><em><span>运行时多次读数据块得到一个一致的映像，但是因为数据库是打开的，可能同一数据块在读的时候又有写入的动作，</span></em><em><span lang="EN-US">DBV</span></em><em><span>不能得到一个一致的数据块映像</span></em><em> </em></p>
+```
+--根据file_id跟block_id查找损坏的块包含什么数据 
+col tablespace_name for a20 
+col segment_type for a10 
+col segment_name for a20 
+col owner for a8 
+SELECT tablespace_name, segment_type, owner, segment_name 
+FROM dba_extents 
+WHERE file_id = &fileid 
+and &blockid between block_id AND block_id + blocks - 1;
+TABLESPACE_NAME      SEGMENT_TY OWNER    SEGMENT_NAME 
+-------------------- ---------- -------- -------------------- 
+BBED                 TABLE      BBED     T
+```
+<h2><span lang="EN-US">1.2 </span><span>对</span><span lang="EN-US">Segment</span><span>进行检测</span><span lang="EN-US"> </span></h2>
+<p><span>验证段的时候要求数据库必须处在</span><span lang="EN-US">open</span><span>状态，还需要提供拥有</span><span lang="EN-US">SYSDBA</span><span>权限的帐号进行查询，查询段的命令格式例如：<code>dbv userid=system/oracle segment_id=tsn.segfile.segblock</code></p>
+<p><span lang="EN-US">tsn</span><em><span lang="EN-US">--</span></em><em><span>表示表空间</span></em><em><span lang="EN-US">id</span></em></p>
+<p><span lang="EN-US">segfile</span><em><span lang="EN-US">--</span></em><em><span>表示段头所在数据文件号</span></em></p>
+<p><span lang="EN-US">segblock</span><em><span lang="EN-US">--</span></em><em><span>表示段头数据块号</span></em></p>
+<p><span>这三个值可以通过数据字典</span><span lang="EN-US">sys_dba_segs</span><span>获取，相关的列分别是tablespace_id、 header_file和header_block 。</p>
+```
+SYS@linora>select tablespace_id,header_file,header_block 
+from sys_dba_segs 
+where owner='BBED' and segment_name='T'; 
+TABLESPACE_ID HEADER_FILE HEADER_BLOCK 
+------------- ----------- ------------ 
+           15           9         1843
+```
+<em><span lang="EN-US">--</span></em><em><span>使用</span></em><em><span lang="EN-US">DBV</span></em><em><span>对</span></em><em><span lang="EN-US">bbed.t</span></em><em><span>进行验证</span></em><span lang="EN-US"> </span>
+```
+[oracle@linora:/home/oracle]$ dbv userid=system/oracle segment_id=15.9.1843
+DBVERIFY: Release 10.2.0.4.0 - Production on Wed Jun 26 04:37:10 2013
+Copyright (c) 1982, 2007, Oracle.  All rights reserved.
+DBVERIFY - Verification starting : SEGMENT_ID = 15.9.1843 
+Page 1844 is marked corrupt 
+Corrupt block relative dba: 0x02400734 (file 9, block 1844) 
+Bad header found during dbv: 
+Data in bad block: 
+ type: 97 format: 2 rdba: 0x68676665 
+ last change scn: 0x6e6d.6c6b6369 seq: 0xa flg: 0x04 
+ spare1: 0x63 spare2: 0x64 spare3: 0x0 
+ consistency value in tail: 0xe1c00602 
+ check value in block header: 0x117d 
+ computed block checksum: 0x2fe1
+ DBVERIFY - Verification complete
+ Total Pages Examined         : 8 
+Total Pages Processed (Data) : 0 
+Total Pages Failing   (Data) : 0 
+Total Pages Processed (Index): 0 
+Total Pages Failing   (Index): 0 
+Total Pages Processed (Other): 6 
+Total Pages Processed (Seg)  : 1 
+Total Pages Failing   (Seg)  : 0 
+Total Pages Empty            : 0 
+Total Pages Marked Corrupt   : 1 
+Total Pages Influx           : 0 
+Highest block SCN            : 3465666 (0.3465666)
+```
+<h1><!--[if !supportLists]--><span lang="EN-US">2.<span>  </span></span><span lang="EN-US">ANALYZE … VALIDATE STRUCTURE</span></h1>
+<span lang="EN-US">Analyze</span><span>能对被分析的对象中的每一个数据块进行验证，如果有坏块则加入</span><span lang="EN-US">INVALID_ROWS</span><span>这个表。</span>
+```
+-- Create the INVALID_ROWS table 
+BBED@linora>@?/rdbms/admin/utlvalid 
+Table created. 
+-- Validate the table structure along with all it's indexes. 
+BBED@linora>ANALYZE TABLE bbed.t VALIDATE STRUCTURE CASCADE; 
+Table analyzed. 
+-- Validate the index structure. 
+ANALYZE INDEX scott.pk_emp VALIDATE STRUCTURE;
+```
+<h1><!--[if !supportLists]--><span lang="EN-US">3.<span>     </span></span><span lang="EN-US">DB_BLOCK_CHECKING</span></h1>
+<span>当使用DB_BLOCK_CHECKING方法验证时候，此参数需要设置为</span><span lang="EN-US">[TRUE|HIGH]</span><span>，</span><span lang="EN-US">DB<em>BLOCK</em>CHECKING</span><span>参数主要是用于数据块的逻辑（一致）检查（但只是块内，不包括块间的逻辑检查，比如索引项目的</span><span lang="EN-US">ROWID</span><span>指向的是不存在的行等）。主要用于防止在内存中损坏或数据损坏。由于是逻辑检查，因此引起的额外负荷比较高，甚至可以达到</span><span lang="EN-US">10%</span><span>，因此对于一个繁忙的系统，特别是插入或更新操作很多的系统，性能影响是比较明显的。该参数对</span><span lang="EN-US">SYSTEM</span><span>表空间始终是处于“打开”状态，而不管该参数是否设置为</span><span lang="EN-US">FALSE</span><span>。</span><span lang="EN-US">Allowable </span><span lang="EN-US">values</span><span lang="EN-US">include</span><span lang="EN-US"> [</span><span lang="EN-US">OFF</span><span lang="EN-US">|</span><span lang="EN-US">FALSE</span><span lang="EN-US">], LOW, </span><span lang="EN-US">MEDIUM</span><span lang="EN-US">, [</span><span lang="EN-US">HIGH</span><span lang="EN-US">|</span><span lang="EN-US">TRUE</span><span lang="EN-US">].</span><strong><span lang="EN-US"> </span></strong>
+<h1><!--[if !supportLists]--><span lang="EN-US">4.<span>      </span></span><!--[endif]--><span lang="EN-US">RMAN(BACKUP VALIDATE,RESTORE VALIDATE,VALIDATE)</span></h1>
+<div><span lang="EN-US">RMAN</span><span>的</span><span lang="EN-US">VALIDATE</span><span>功能能对整个数据库的备份、恢复进行验证，但不会真的去备份或者恢复。</span></div>
+```
+RMAN> backup validate datafile 9;
+Starting backup at 2013-06-26 04:41:21 
+using target database control file instead of recovery catalog 
+allocated channel: ORA_DISK_1 
+channel ORA_DISK_1: sid=306 devtype=DISK 
+channel ORA_DISK_1: starting compressed full datafile backupset 
+channel ORA_DISK_1: specifying datafile(s) in backupset 
+input datafile fno=00009 name=/oradata/linora/bbed01.dbf 
+channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01 
+Finished backup at 2013-06-26 04:41:24 
+--逻辑坏块检查 
+RMAN> backup check logical validate datafile 9;
+Starting backup at 2013-06-26 04:41:41 
+using channel ORA_DISK_1 
+channel ORA_DISK_1: starting compressed full datafile backupset 
+channel ORA_DISK_1: specifying datafile(s) in backupset 
+input datafile fno=00009 name=/oradata/linora/bbed01.dbf 
+channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01 
+Finished backup at 2013-06-26 04:41:42
+```
+<span>验证结果在</span><span lang="EN-US">V$DATABASE_BLOCK_CORRUPTION</span><span>视图中。</span><span lang="EN-US"> </span>
+```
+BBED@linora>select * from  V$DATABASE_BLOCK_CORRUPTION;
+     FILE#     BLOCK#     BLOCKS CORRUPTION_CHANGE# CORRUPTION_TYPE 
+---------- ---------- ---------- ------------------ ------------------ 
+         9       1844          1                  0 CORRUPT
+```
+CORRUPTION_TYPE 类型： 
+<li><b>ALL ZERO：</b>Blockheaderondisk contained only zeros. Theblock may be valid ifit was never filled andif it isin an Oracle7 file. Thebuffer will bereformatted tothe Oracle8 standardfor an empty block. </li>
+<li><b>FRACTURED：</b>Blockheader looks reasonable, but the front and back ofthe blockare different versions. </li>
+<li><b>CHECKSUM：</b> optional checkvalue shows that theblockisnotself-consistent.It is impossible to determine exactly why thecheckvalue fails, but itprobably fails because sectors inthe middle oftheblock are from differentversions. </li>
+<li><b>CORRUPT：</b>Blockis wrongly identifiedorisnot a datablock (for example,thedatablock address is missing) </li>
+<li><b>LOGICAL:</b> Specifies therangeisfor logically corrupt blocks.CORRUPTION_CHANGE# will have a nonzero value. </li>
+<h1><!--[if !supportLists]--><span lang="EN-US">5.<span>     </span></span><span lang="EN-US">Block Media Recovery</span></h1>
+<p>BMR，数据块级别修复，允许只对指定的数据块进行恢复而不影响到整个数据文件。BMR只能通过RMAN的BLOCKREOCVER命令进行修复。数据坏块信息可能会出现在以下几个地方：</p>
+<li>Error messages</li>
+<li>The alert log</li>
+<li>Trace File</li>
+<li>ANALYZE TABLE|INDEX</li>
+<li>DBVerify</li>
+<li>The V$BACKUPCORRUPTION & V$COPYCORRUPTION views list corrupt blocks in the backups, not the database itself.</li>
+<li>The V$DATABASEBLOCKCORRUPTION lists corrupt blocks in the database detected during a variety of RMAN operations. Recovered blocks will still be listed until the next backup is performed.</li>
+<span>   一旦在上述情况中检测到坏块，则可使用</span><span lang="EN-US">BMR</span><span>的方式进行修复。</span><span lang="EN-US">CORRUPTION</span><span lang="EN-US">LIST</span><span>关键字可以修复所有在</span><span lang="EN-US"><code>V$DATABASE_BLOCK_CORRUPTION</code>视图中列出的坏块，但这些坏块清单只能在</span><span lang="EN-US">UNTIL</span><span>子句下恢复。</span>
+<pre>BLOCKRECOVER DATAFILE 9 BLOCK 12;
+BLOCKRECOVER CORRUPTION LIST RESTORE UNTIL TIME 'SYSDATE - 7';</pre>
+<h1><!--[if !supportLists]--><span lang="EN-US">6.<span>     </span></span><span lang="EN-US">DBMS_REPAIR</span><span>，会丢失数据</span><span lang="EN-US"> </span></h1>
+<span lang="EN-US">    DBMS_REPAIR</span><span>包可以在无备份情况下对坏块进行修复。它需要两张管理表用于存放坏块信息及指向这些坏块的索引信息。但跳过坏块会丢失数据。</span>
+```
+BEGIN 
+  DBMS_REPAIR.admin_tables ( 
+    table_name => 'REPAIR_TABLE', --表名 
+    table_type => DBMS_REPAIR.repair_table, 
+    action     => DBMS_REPAIR.create_action, 
+    tablespace => 'BBED');--用于存放此表的表空间
+	DBMS_REPAIR.admin_tables ( 
+    table_name => 'ORPHAN_KEY_TABLE', 
+    table_type => DBMS_REPAIR.orphan_table, 
+    action     => DBMS_REPAIR.create_action, 
+    tablespace => 'BBED'); 
+END; 
+/
+```
+    
+表创建完后，可以对表进行检测： 
+```
+--使用dbms_repair.check_object进行坏块检测 
+SYS@linora>SET SERVEROUTPUT ON 
+DECLARE 
+  v_num_corrupt INT; 
+BEGIN 
+  v_num_corrupt := 0; 
+  DBMS_REPAIR.check_object ( 
+    schema_name       => 'BBED', 
+    object_name       => 'T', 
+    repair_table_name => 'REPAIR_TABLE', 
+    corrupt_count     =>  v_num_corrupt); 
+  DBMS_OUTPUT.put_line('number corrupt: ' || TO_CHAR (v_num_corrupt)); 
+END; 
+/
+number corrupt: 1              --检测到一个坏块
+PL/SQL procedure successfully completed. 
+BBED@linora>select count(*) from t 
+  2  / 
+select count(*) from t 
+                     * 
+ERROR at line 1: 
+ORA-01578: ORACLE data block corrupted (file # 9, block # 12) 
+ORA-01110: data file 9: '/oradata/linora/bbed01.dbf'
+```
+<p>通过运行<code>DBMS_REPAIR.check_object</code>，将坏块信息存放到了repairtable表中，其中有个字段markedcorrupt，用于标识该块是否被标识为坏块，当被标识为true时，即该块被标识为坏块。其中这一步跟oracle文档中的描述有点进入，根据oracle文档，当执行完<code>DBMS_REPAIR.check_object</code>时，并不会进行坏块标识，也就是markedcorrupt列的值应该为false，而只有当执行<code>DBMS_REPAIR.fix_corrupt_blocks</code>过程后才会进行坏块标识。 </p>
+–使用<code>DBMS_REPAIR.fix_corrupt_blocks</code>进行坏块标识 
+```
+SET SERVEROUTPUT ON 
+DECLARE 
+  v_num_fix INT; 
+BEGIN 
+  v_num_fix := 0; 
+  DBMS_REPAIR.fix_corrupt_blocks ( 
+    schema_name       => 'BBED', 
+    object_name       => 'T', 
+    object_type       => Dbms_Repair.table_object, 
+    repair_table_name => 'REPAIR_TABLE', 
+    fix_count         => v_num_fix); 
+  DBMS_OUTPUT.put_line('num fix: ' || TO_CHAR(v_num_fix)); 
+END; 
+/
+num fix: 0
+PL/SQL procedure successfully completed.
+```
+<p>我们可以见到到num fix=0，估计在上一步进行check_object时已经进行了坏块标识了，这一步其实可以省略。</p>
+<p>使用<code>DBMS_REPAIR.dump_orphan_keys</code>过程来保存坏块的索引键值，然后再执行skipcorruptblocks过程之后，我们才能重建索引，不然重建索引时新的索引仍然会引用坏块。
+首先要建立ORPHANKEY_TABLE，此表就是用来存放坏块的索引键值。</>
+```
+SET SERVEROUTPUT ON 
+DECLARE 
+  v_num_orphans INT; 
+BEGIN 
+  v_num_orphans := 0; 
+  DBMS_REPAIR.dump_orphan_keys ( 
+    schema_name       => 'SCOTT', 
+    object_name       => 'PK_DEPT', 
+    object_type       => DBMS_REPAIR.index_object, 
+    repair_table_name => 'REPAIR_TABLE', 
+    orphan_table_name => 'ORPHAN_KEY_TABLE', 
+    key_count         => v_num_orphans); 
+  DBMS_OUTPUT.put_line('orphan key count: ' || TO_CHAR(v_num_orphans)); 
+END; 
+/
+```
+<span>使用</span><span lang="EN-US">dbms_repair.rebuild_freelists</span><span>重建</span><span lang="EN-US">freelists</span><span>，使得该块不再被放到</span><span lang="EN-US">freelists</span><span>，当中，也就是该块将不会再被使用。</span>
+```
+BEGIN 
+  DBMS_REPAIR.rebuild_freelists ( 
+    schema_name => 'BBED', 
+    object_name => 'T', 
+    object_type => DBMS_REPAIR.table_object); 
+END; 
+/
+--使用skip_corrupt_blocks，使查询或者DML时跳过坏块 
+BEGIN 
+  DBMS_REPAIR.skip_corrupt_blocks ( 
+    schema_name => 'BBED', 
+    object_name => 'T', 
+    object_type => DBMS_REPAIR.table_object, 
+    flags       => DBMS_REPAIR.skip_flag); 
+END; 
+/
+BBED@linora>select count(*) from t;
+COUNT(*) 
+---------- 
+         0 
+
+通过查询DBA_TABLES的SKIP_CORRUPT可查询表是否有坏块被跳过。 
+BBED@linora>select SKIP_CORRUPT  from dba_tables where table_name='T' and owner='BBED';
+SKIP_CORRUPT 
+---------------- 
+ENABLED
+```
+<h1><!--[if !supportLists]--><span lang="EN-US">7.<span>     </span></span><span>案例</span><span lang="EN-US"> </span></h1>
+<h2><span lang="EN-US">7.1 </span><span>无<span lang="EN-US">RMAN</span>备份，<span lang="EN-US">corruption</span>对象为<span lang="EN-US">table</span>，使用<span lang="EN-US">10231</span>跳过坏块进行全表扫描</span></h2>
+<em><span lang="EN-US">--</span></em><em><span>验证步骤略</span></em><span>如果存在</span><span lang="EN-US">corruption 
+block</span><span>，</span><span lang="EN-US">exp</span><span>导出会报错。</span>
+```
+[oracle@linora:/home/oracle]$ exp bbed/bbed tables=t file=./t.dmp
+Export: Release 10.2.0.4.0 - Production on Tue Jun 4 22:20:13 2013
+Copyright (c) 1982, 2007, Oracle.  All rights reserved.
+
+Connected to: Oracle Database 10g Enterprise Edition Release 10.2.0.4.0 - 64bit Production 
+With the Partitioning, OLAP, Data Mining and Real Application Testing options 
+Export done in ZHS16GBK character set and AL16UTF16 NCHAR character set 
+server uses WE8ISO8859P1 character set (possible charset conversion)
+
+About to export specified tables via Conventional Path ... 
+. . exporting table                              T 
+EXP-00056: ORACLE error 1578 encountered 
+ORA-01578: ORACLE data block corrupted (file # 9, block # 12) 
+ORA-01110: data file 9: '/oradata/linora/bbed01.dbf' 
+Export terminated successfully with warnings.
+```
+
+```
+--设置session级别10231事件 
+BBED@linora>ALTER SYSTEM SET EVENTS='10231 trace name context forever,level 10';
+[oracle@linora:/home/oracle]$ exp bbed/bbed tables=t file=./t.dmp
+Export: Release 10.2.0.4.0 - Production on Tue Jun 4 22:29:09 2013
+Copyright (c) 1982, 2007, Oracle.  All rights reserved.
+
+Connected to: Oracle Database 10g Enterprise Edition Release 10.2.0.4.0 - 64bit Production 
+With the Partitioning, OLAP, Data Mining and Real Application Testing options 
+Export done in ZHS16GBK character set and AL16UTF16 NCHAR character set 
+server uses WE8ISO8859P1 character set (possible charset conversion
+
+About to export specified tables via Conventional Path ... 
+. . exporting table                              T      50979 rows exported 
+EXP-00091: Exporting questionable statistics. 
+EXP-00091: Exporting questionable statistics. 
+Export terminated successfully with warnings. 
+[oracle@linora:/home/oracle]$
+```
+<span>成功导出，</span><span lang="EN-US">drop table</span><span>并且导入数据。导入后，会有部分数据丢失。</span><span lang="EN-US">10231</span><span>事件仅支持</span><span lang="EN-US">exp</span><span>或者</span><span lang="EN-US">create table as select from</span><span>语句。</span>
+```
+BBED@linora>select count(*) from t;
+
+COUNT(*) 
+---------- 
+     50979
+	 
+BBED@linora>select count(*) from dba_objects;
+COUNT(*) 
+---------- 
+     51072
+```
+<span>注意，此方法并不能修复坏块，只能跳过坏块，</span><span lang="EN-US">dbv</span><span>检查的时候还是会有坏块出来。</span><span lang="EN-US"> </span>
+<h1><!--[if !supportLists]--><span lang="EN-US">8.<span>     </span></span><span>方法总结</span></h1>
+<span lang="EN-US">How to identify the corrupt Object reported by ORA-1578 / RMAN / DBVERIFY [ID 819533.1]</span>
+<h2><!--[if !supportLists]--><span lang="EN-US">8.1<span>  </span></span><!--[endif]--><span>确认损坏的数据文件及相关信息</span></h2>
+```
+SELECT file_id AFN, relative_fno, tablespace_name 
+FROM  dba_data_files 
+WHERE relative_fno=9; 
+       AFN RELATIVE_FNO TABLESPACE_NAME 
+---------- ------------ -------------------- 
+         9            9 BBED 
+--确认数据文件位置 
+select file#,name from v$datafile where file#=9;
+```
+<h2><!--[if !supportLists]--><span lang="EN-US">8.2<span>  </span></span><!--[endif]--><span>根据错误信息，确认损坏的块所包含的对象信息<span lang="EN-US"> </span></span></h2>
+```
+BBED@linora>select * from v$database_block_corruption;
+FILE#     BLOCK#     BLOCKS CORRUPTION_CHANGE# CORRUPTION_TYPE 
+---------- ---------- ---------- ------------------ ------------------ 
+         9       1844          1                  0 CORRUPT 
+BBED@linora>SELECT tablespace_name, segment_type, owner, segment_name 
+  2  FROM dba_extents 
+  3  WHERE file_id = &AFN 
+  4  AND &BL between block_id AND block_id + blocks - 1; 
+Enter value for afn: 9 
+old   3: WHERE file_id = &AFN 
+new   3: WHERE file_id = 9 
+Enter value for bl: 1844 
+old   4: AND &BL between block_id AND block_id + blocks - 1 
+new   4: AND 1844 between block_id AND block_id + blocks - 1
+
+TABLESPACE_NAME      SEGMENT_TY OWNER    SEGMENT_NAME 
+-------------------- ---------- -------- -------------------- 
+BBED                 TABLE      BBED     T
+```
+<h3><span lang="EN-US">Identify the corrupt segments</span></h3>
+```
+SELECT e.owner, e.segment_type, e.segment_name, e.partition_name, c.file# 
+     , greatest(e.block_id, c.block#) corr_start_block# 
+     , least(e.block_id+e.blocks-1, c.block#+c.blocks-1) corr_end_block# 
+     , least(e.block_id+e.blocks-1, c.block#+c.blocks-1) 
+       - greatest(e.block_id, c.block#) + 1 blocks_corrupted 
+     , null description 
+  FROM dba_extents e, v$database_block_corruption c 
+ WHERE e.file_id = c.file# 
+   AND e.block_id <= c.block# + c.blocks - 1    AND e.block_id + e.blocks - 1 >= c.block# 
+UNION 
+SELECT s.owner, s.segment_type, s.segment_name, s.partition_name, c.file# 
+     , header_block corr_start_block# 
+     , header_block corr_end_block# 
+     , 1 blocks_corrupted 
+     , 'Segment Header' description 
+  FROM dba_segments s, v$database_block_corruption c 
+ WHERE s.header_file = c.file# 
+   AND s.header_block between c.block# and c.block# + c.blocks - 1 
+UNION 
+SELECT null owner, null segment_type, null segment_name, null partition_name, c.file# 
+     , greatest(f.block_id, c.block#) corr_start_block# 
+     , least(f.block_id+f.blocks-1, c.block#+c.blocks-1) corr_end_block# 
+     , least(f.block_id+f.blocks-1, c.block#+c.blocks-1) 
+       - greatest(f.block_id, c.block#) + 1 blocks_corrupted 
+     , 'Free Block' description 
+  FROM dba_free_space f, v$database_block_corruption c 
+ WHERE f.file_id = c.file# 
+   AND f.block_id <= c.block# + c.blocks - 1    AND f.block_id + f.blocks - 1 >= c.block# 
+order by file#, corr_start_block#;
+```
+<span>    还有上述查询没结果的情况，即表面这个坏块是在</span><span lang="EN-US">LMT(</span><span lang="EN-US">Locally Managed Tablespace</span><span lang="EN-US">)</span><span>文件头中，当出现这种情况的时候，查询不会失败；如果出现上述情况，请用一下语句查询：</span>
+```
+SELECT owner, segment_name, segment_type, partition_name 
+FROM   dba_segments 
+WHERE  header_file = &AFN 
+AND  header_block = &BL; 
+--如果知道database block address 也可以查找出相关内容： 
+SELECT dbms_utility.data_block_address_file(&&rdba) RFN, 
+       dbms_utility.data_block_address_block(&&rdba) BL 
+FROM dual;
+```
+<h2><!--[if !supportLists]--><span lang="EN-US">8.3<span>  </span></span><!--[endif]--><span>根据以上查询，来确认哪些对象受了影响<span lang="EN-US"> </span></span></h2>
+```
+--如果Segment type为index Partition，那么，通过以下语句确认哪个分区受影响。 
+SELECT partition_name 
+FROM dba_extents 
+WHERE file_id = &AFN 
+AND &BL BETWEEN block_id AND block_id + blocks - 1; 
+此时只需要rebuild index即可： 
+ALTER INDEX xxx REBUILD PARTITION ppp; 
+--如果segment type是index，那么找出该index 属于哪一张表。 
+SELECT table_owner, table_name 
+FROM dba_indexes 
+WHERE owner='&OWNER' 
+AND index_name='&SEGMENT_NAME'; 
+--确认该索引是否有约束条件： 
+SELECT owner, constraint_name, constraint_type, table_name 
+FROM dba_constraints 
+WHERE owner='&TABLE_OWNER' 
+AND constraint_name='&INDEX_NAME'; 
+--如果是“P”类型的，查看其是否有外键约束： 
+SELECT owner, constraint_name, constraint_type, table_name 
+FROM dba_constraints 
+WHERE r_owner='&TABLE_OWNER' 
+AND r_constraint_name='&INDEX_NAME'; 
+--如果类型是分区表,确认是哪个分区受影响： 
+SELECT partition_name 
+FROM dba_extents 
+WHERE file_id = &AFN 
+AND &BL BETWEEN block_id AND block_id + blocks - 1; 
+如果损坏的数据在一个分区表里面，那么EXCHANGE该数据到一张空表里，保证应用能够继续，后续再提数据。 
+ALTER TABLE .. EXCHANGE PARTITION .. WITH TABLE ..; 
+--如果类型是Table，那么首先确认该表是否含有index： 
+SELECT owner, index_name, index_type 
+FROM dba_indexes 
+WHERE table_owner='&OWNER' 
+AND table_name='&SEGMENT_NAME';
+--然后进一步确认是否含有主键索引： 
+SELECT owner, constraint_name, constraint_type, table_name 
+FROM dba_constraints 
+WHERE owner='&OWNER' 
+AND table_name='&SEGMENT_NAME' 
+AND constraint_type='P'; 
+--如果含有主键索引，再查看是否有外键约束： 
+SELECT owner, constraint_name, constraint_type, table_name 
+FROM dba_constraints 
+WHERE r_owner='&OWNER' 
+AND r_constraint_name='&CONSTRAINT_NAME'; 
+```
+此时可以抽取数据，然后recreate table。也可以使用dbms_repair 包skip坏块。 
+修复的方法这里就省略了。
+<h1><!--[if !supportLists]--><span lang="EN-US">9.<span>     </span></span><span>附录</span><span lang="EN-US">—10231</span><span>事件说明</span><span lang="EN-US"> </span></h1>
+Subject: Extracting Data from a Corrupt Table using SKIP CORRUPT BLOCKS or Event 10231 Doc ID: Note:33405.1

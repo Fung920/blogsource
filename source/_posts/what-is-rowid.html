@@ -1,0 +1,105 @@
+---
+layout: post
+title: Oracle ROWID学习
+categories:
+- oracle
+tags: 
+- fundamentals
+published: true
+comments: false
+date: 2013-06-15
+---
+Reference：http://www.orafaq.com/wiki/ROWID<br /> 
+<!--more-->
+http://www.cnblogs.com/rootq/archive/2008/10/24/1319058.html<br /> 
+http://www.oracleonlinux.cn/2011/11/whats-oracle-rowid/<br /> 
+在Oracle数据库中，每一行记录都会有一个唯一的ROWID指向磁盘中存放此记录的物理地址。<br /> 
+一般ROWID一旦分配就不会改变，但当重组表或者使用exp/imp工具导入一个表时候，ROWID将会改变。<br /> 
+在分区表中，因为update导致数据从一个分区到另一个分区的row Migration也会改变该记录的ROWID。<br />
+从8i开始，ROWID大小固定为10bytes，由data_object_id#+rfile#+block#+row#组成，显示为18位字符串，如下所示：
+<pre>
+BBED@linora> SELECT owner,rowid FROM t WHERE rownum=1;
+
+OWNER      ROWID
+---------- ------------------
+SYSTEM     AAAO3qAAJAAAAQNAAA
+</pre>
+  对以上18位字符解释如下：<br /> 
+The Oracle 8 format is on 10 bytes:<br /> 
+<li>                    bits 1 to 32 (bytes 1 to 4): data object id (0-4294967295)</li>
+<li>                   bits 33 to 44 (byte 5 and half byte 6): file number inside the tablespace (0-4095)</li>
+<li>                   bits 45 to 64 (half byte 6 and bytes 7 and 8): block number inside the file (0-1048575)</li>
+<li>                    bits 65 to 80 (bytes 9 and 10): row number inside the block (0-65535)</li>
+32bit的object number，每个数据库最多有4G个对象<br /> 
+10bit的file number，每个对象最多有1022个文件（2个文件预留）<br /> 
+22bit的block number，每个文件最多有4M个BLOCK<br /> 
+16bit的row number，每个BLOCK最多有64K个ROWS <br /> 
+ROWID的格式如下：<br />  
+数据对象编号        文件编号        块编号           行编号<br /> 
+OOOOOO               FFF              BBBBBB           RRR<br /> 
+       根据SQL查找出来的ROWID显示是18字符，这些字符是64位编码，10进制跟64进制转换如下：<br /> 
+<p>{% img /images/dec.png %}</p>
+  由此可得知：
+A-Z <==> 0 – 25 (26)<br /> 
+a-z <==> 26 – 51 (26)<br /> 
+0-9 <==> 52 – 61 (10)<br /> 
++/ <==> 62 – 63 (2)<br />
+       因此10进制跟64进制编码转换公式如下：d*(b^p)，其中b为基数，这里就是64，p就是从右至左，以0开始的位置数，那么上面例子中AAAO3qAAJAAAAQNAAA，文件号AAJ具体计算应该为：<br />
+9*(64^0)=9<br />
+0*(64^1)=0<br />
+0*(64^2)=0<br />
+       因此该文件号为9。块编号为AAAAQN，具体计算为(A值为0，可以不算了)：<br />
+N=13*(64^0)=13<br />
+Q=16*(64^1)=1024<br />
+       因此，该块编号为1037，行编号为0，可以使用DBMS_ROWID包验证以上计算结果：<br />
+```
+SELECT DBMS_ROWID.ROWID_OBJECT(rowid) "OBJECT",
+DBMS_ROWID.ROWID_RELATIVE_FNO(rowid) "FILE",
+DBMS_ROWID.ROWID_BLOCK_NUMBER(rowid) "BLOCK",
+DBMS_ROWID.ROWID_ROW_NUMBER(rowid) "ROW"
+FROM bbed.t
+WHERE rownum=1
+/
+或者：
+SELECT rowid,
+dbms_rowid.rowid_object(rowid) object_id,
+dbms_rowid.rowid_relative_fno(rowid)  file_id,
+dbms_rowid.rowid_block_number(rowid)  block_id ,
+dbms_rowid.rowid_row_number(rowid)   num ,
+rowidtochar(rowid) FROM bbed.t WHERE rownum=1
+;
+    OBJECT       FILE      BLOCK        ROW
+---------- ---------- ---------- ----------
+     60906          9       1037          0
+--也可以通过以下方式获取相关rowid信息：
+CREATE OR REPLACE FUNCTION get_rowid
+(l_rowid IN varchar2) RETURN varchar2 IS
+  ls_my_rowid   varchar2(200);
+  rowid_type    NUMBER;
+  object_number NUMBER;
+  relative_fno  NUMBER;
+  block_number  NUMBER;
+  ROW_NUMBER    NUMBER;
+BEGIN
+  dbms_rowid.rowid_info(l_rowid,
+                        rowid_type,
+                        object_number,
+                        relative_fno,
+                        block_number,
+                        ROW_NUMBER);
+  ls_my_rowid := 'Object# is      :' || to_char(object_number) || chr(10) ||
+                 'Relative_fno is :' || to_char(relative_fno) || chr(10) ||
+                 'Block number is :' || to_char(block_number) || chr(10) ||
+                 'Row number is   :' || to_char(ROW_NUMBER);
+  RETURN ls_my_rowid;
+END;
+/
+ -- 结果如下所示：
+BBED@linora&gt;selectget_rowid(rowid), owner FROM t WHERE rownum=1;
+GET_ROWID(ROWID)               OWNER
+---------------------------- -------------------------------
+Object# IS      :60906         SYSTEM
+Relative_fno IS :9
+Block NUMBER IS :1037
+ROW NUMBER IS   :0
+```
