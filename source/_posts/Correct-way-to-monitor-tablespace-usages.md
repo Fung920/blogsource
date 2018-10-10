@@ -43,6 +43,7 @@ USERS                        7920.25         8322.5      95.17    --auto extend 
 
 Below shows the examples:
 ## 1.1 Monitoring real tablespace usage
+Non-CDB:
 ```sql
 col dbname for a10
 col tbs_name for a30
@@ -65,6 +66,38 @@ SELECT * FROM (
     v$database d
     WHERE a.tablespace_name = c.tablespace_name(+)
 );
+```
+
+CDB:
+```sql
+SET LINES 132 PAGES 100
+COL con_name        FORM A15 HEAD "Container|Name"
+COL tablespace_name FORM A15
+COL fsm             FORM 999,999,999,999 HEAD "Free|Space Meg."
+COL apm             FORM 999,999,999,999 HEAD "Alloc|Space Meg."
+COL usage_pct       form a10             head "Used|Percent%"
+--
+COMPUTE SUM OF fsm apm ON REPORT
+BREAK ON REPORT ON con_id ON con_name ON tablespace_name
+--
+WITH x AS (SELECT c1.con_id, cf1.tablespace_name, SUM(cf1.bytes)/1024/1024 fsm
+           FROM cdb_free_space cf1
+               ,v$containers c1
+           WHERE cf1.con_id = c1.con_id
+           GROUP BY c1.con_id, cf1.tablespace_name),
+     y AS (SELECT c2.con_id, cd.tablespace_name, SUM(cd.bytes)/1024/1024 apm
+           FROM cdb_data_files cd
+               ,v$containers c2
+           WHERE cd.con_id = c2.con_id
+           GROUP BY c2.con_id
+                   ,cd.tablespace_name)
+SELECT x.con_id, v.name con_name, x.tablespace_name, x.fsm, y.apm
+LPAD(ROUND((1 - x.fsm / y.apm ) * 100, 2)||'%', 10, ' ') as usage_pct
+FROM x, y, v$containers v
+WHERE x.con_id          = y.con_id
+AND   x.tablespace_name = y.tablespace_name
+AND   v.con_id          = y.con_id
+ORDER BY 1, 3;
 ```
 
 ## 1.2 Monitoring tablespace growth rate
