@@ -32,12 +32,14 @@ MOS: [HugePages on Oracle Linux 64-bit (Doc ID 361468.1)](https://support.oracle
 
 * Setting memlock in `/etc/security/limits.conf`
 Set the value (in KB) slightly smaller than installed RAM, example for 64G RAM:
+
 ```sh
 oracle   soft   memlock    60397977
 oracle   hard   memlock    60397977
 ```
 
 * Verify Hugepage is set
+
 ```sh
 grep -i huge /proc/meminfo
 HugePages_Total:       133300      --total huge pages
@@ -54,6 +56,7 @@ Huge page on AIX is called largepages.
 MOS: [How to enable Large Page Feature on AIX-Based Systems (Doc ID 372157.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=327897114456641&id=372157.1&_adf.ctrl-state=v1xoqgu3h_666)
 
 * Verify current large pages setting
+
 ```sh
 root@db01:/# vmo -L lgpg_size
 NAME                      CUR    DEF    BOOT   MIN    MAX    UNIT           TYPE
@@ -73,6 +76,7 @@ lgpg_regions              0      0      0      0      8E-1                     D
 
 * Setting large pages
 Give the Oracle user ID the CAP_BYPASS_RAC_VMM and CAP_PROPAGATE capabilities by following these steps:
+
 ```sh
 --First check the current capabilities:
 lsuser -a capabilities root
@@ -112,6 +116,7 @@ MOS: [ALERT: Disable Transparent HugePages on SLES11, RHEL6, RHEL7, OL6, OL7, an
 For Linux, Oracle strongly recommend to disable transparent Hugepages, especially in RAC, transparent Hugepages will occur node reboot.
 
 * Verify current setting
+
 ```
 cat /sys/kernel/mm/transparent_hugepage/enabled #OEL
 cat //sys/kernel/mm/redhat_transparent_hugepage/enabled #RHEL
@@ -130,6 +135,7 @@ Add "transparent_hugepage=never" to the kernel boot line in the "/boot/grub/grub
 
 * RHEL7
 RHEL7: edit the "/boot/grub2/grub.cfg" file using the grubby command.
+
 ```bash
 grubby --default-kernel
    /boot/vmlinuz-4.1.12-61.1.6.el7uek.x86_64

@@ -9,24 +9,6 @@ body, button, input, select, textarea {
     font-size: 1.1rem;  //kkdba: add font size, default is 0.9rem;
 }
 
-#myarchive a:link {
-    // color: inherit;
-    color: blue;
-    text-decoration: underline;
-}
-#myarchive a:visited {
-    // color: inherit;
-    color: purple;
-}
-#myarchive a:hover {
-    color: #3273dc;
-    // color: purple;
-    // color: inherit;
-    // border-bottom: 1px dotted transparent;
-    // border-bottom-color: darkgray;
-}
-#myarchive a:active {
-}
 
 a.tag.article-tag {
     font-size: 0.9rem;
@@ -35,8 +17,8 @@ a.tag.article-tag {
 
 @media screen and (min-width: 1024px) {
     .container {
-        max-width: 800px;       // kkdba: modify width from 800 to 850
-        width: 800px;           // kkdba: modify width from 800 to 850
+        max-width: 850px;       // kkdba: modify width from 800 to 850
+        width: 850px;           // kkdba: modify width from 800 to 850
     }
 
     .navbar.is-transparent .navbar-dropdown a.navbar-item:hover {

@@ -24,8 +24,10 @@ article:
 # Navigation bar menu links.
 menu:
   Home: /
-  Archives: /archives
+  # Archives: /archives
   About: /about
+  # change homepage to archive pages        kkdba: 20181012
+  # mv layout/archive.ejs layout/index.ejs  kkdba: 20181012
 
 # Search plugin settings.
 search:

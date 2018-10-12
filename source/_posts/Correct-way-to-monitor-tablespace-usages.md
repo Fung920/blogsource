@@ -11,9 +11,10 @@ Some v$ views and dictionaries are useful while monitoring tablespace.
 
 # 1. Permanent tablespace
 * `DBA_TABLESPACE_USAGE_METRICS`
-   Describes tablespace usage metrics for all types of tablespaces, including permanent, temporary, and undo tablespaces. Not suitable for autoextend data files.
-   > TABLESPACE_SIZE is the maximum possible size if AUTO extended on, not the current size. The same applies to USED_PERCENT.
-   > USED_SPACE and TABLESPACE_SIZE are in blocks.
+
+Describes tablespace usage metrics for all types of tablespaces, including permanent, temporary, and undo tablespaces. Not suitable for autoextend data files.
+> TABLESPACE_SIZE is the maximum possible size if AUTO extended on, not the current size. The same applies to USED_PERCENT.
+> USED_SPACE and TABLESPACE_SIZE are in blocks.
 
 see MOS: [Difference in Tablespace Size Values From dba_data_files and dba_tablespace_usage_metrics/V$filespace_usage (Doc ID 455715.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=239212711068322&id=455715.1&_adf.ctrl-state=uz8pga6j_119)
 
@@ -135,6 +136,7 @@ SELECT A.NAME, B.TABLESPACE_ID,B.DATETIME,B.USED_SIZE_MB,B.INC_MB,
 See MOS: [Mismatch Between V$TEMP_SPACE_HEADER and V$TEMPSEG_USAGE/V$SORT_USAGE (Doc ID 2095211.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=240558702386283&id=2095211.1&_adf.ctrl-state=uz8pga6j_527).
 
 * Correct way to show TEMP tablespace usage
+
 ```sql
 select tablespace_name,
 tablespace_size/1024/1024 "Total Space",

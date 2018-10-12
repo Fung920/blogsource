@@ -14,6 +14,7 @@ Because DBBP covers more bug fixes than PSU, it's recommended to use DBBP to app
 # 1. Pre-installation task
 First, it's always essential to check the `opatch` version, find the readme file in the patchset to meet the minimum version. In RAC environment, both `GRID_HOME` and `ORACLE_HOME` Opatch should be replaced with target version.
 * Reserve historical information
+
 ```sql
 <ORACLE_HOME>/OPatch/opatch lsinventory -detail -oh <ORACLE_HOME> >/tmp/lsinv.info
 <ORACLE_HOME>/OPatch/opatch lspatches >> /tmp/lsinv.info
@@ -34,11 +35,13 @@ spool off
 ```
 
 * Run OPatch Conflict check
+
 ```sh
 $ORACLE_HOME/OPatch/opatch prereq CheckConflictAgainstOHWithDetail -phBaseDir <UNZIPPED_PATCH_LOCATION>/27968010/27547374
 ```
 
 * One-off patch conflict detection and resolution
+
 ```sh
 GRID_HOME/OPatch/opatchauto apply <UNZIPPED_PATCH_LOCATION>/27968010 -analyze
 ```
@@ -47,6 +50,7 @@ GRID_HOME/OPatch/opatchauto apply <UNZIPPED_PATCH_LOCATION>/27968010 -analyze
 ## 2.1 Applying DBBP
 * opatchauto
 Running below commands on all nodes, this command require sequential execution, __DO NOT run in both nodes parallel in RAC__.
+
 ```sh
 --with root user
 export PATH=$PATH:<GI_HOME>/OPatch
@@ -66,6 +70,7 @@ SQL> exec dbms_java_dev.disable
 ```
 
 * Upgrade rman catalog if any
+
 ```sql
 rman catalog username/password@alias
 RMAN> UPGRADE CATALOG;
@@ -95,6 +100,7 @@ ORDER by action_time;
 
 # 3. Backout
 * Execute as root to uninstall patches
+
 ```sh
 --RAC
 <GI_HOME>/OPatch/opatchauto rollback <UNZIPPED_PATCH_LOCATION>/27968010
@@ -103,6 +109,7 @@ opatch rollback -id 27547374
 ```
 
 * Update data dictionary with datapatch
+
 ```sql
 SQL> startup
 --CDB, not necessary if non-CDB
@@ -120,7 +127,7 @@ cp -p $GRID_HOME/crs/sbs/crsconfig_fileperms.sbs $GRID_HOME/crs/sbs/crsconfig_fi
 cp -p $GRID_HOME/crs/utl/<node>/crsconfig_fileperms $GRID_HOME/crs/utl/<node>/crsconfig_fileperms.bak
 ```
 Remove below lines in above files:
-```
+```sh
 unix %ORA_CRS_HOME%/suptools/tfa/release/tfa_home/jlib/jdev-rt.jar %HAS_USER% %ORA_DBA_GROUP% 0644
 unix %ORA_CRS_HOME%/suptools/tfa/release/tfa_home/jlib/jewt4.jar %HAS_USER% %ORA_DBA_GROUP% 0644
 ```
