@@ -13,7 +13,7 @@
     years.sort((a, b) => b - a); %>
     <% for (let year of years) { %>
             <% for (let post of groups[year].sort((a, b) => b.date.diff(a.date))) { %>
-            <div id="myarchive">
+            <div id="myarchive" class="is-size-6-mobile">
             <li>
                     <time class="is-text-small" datetime="<%= date_xml(post.date) %>" itemprop="datePublished">
                         <%= date(post.date) %></time>
