@@ -356,13 +356,21 @@ a.tag.article-tag {
 }
 
 .footer {
-    font-size: .9rem;
+    // font-size: .9rem;        //kkdba: modify footer setting
+    font-size: 1.0rem;        //kkdba: modify footer setting
     background: transparent;
 
     .content {
-        padding-top: 2rem;
-        border-top: 1px solid $border-color;
+        // padding-top: 2rem;
+        // border-top: 1px solid $border-color;
+        padding: 1px;
+        border-top: 1px dashed $border-color;
     }
+}
+
+.footer-padding {
+    //kkdba: modify default padding of footer
+    padding: 0.5px;
 }
 
 .searchbox {
