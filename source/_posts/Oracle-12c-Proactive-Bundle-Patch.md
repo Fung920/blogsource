@@ -7,7 +7,7 @@ tags:
    - patch
    - 12c
 ---
-As of Oracle 12.1.0.2, ORACLE provide a new approach to patch PSU which called Proactive Bundle Patch(DBBP) and replace the previous PSU.
+As of Oracle 12.1.0.2, ORACLE provide a new way to patch PSU which called Proactive Bundle Patch(DBBP) and replace the previous PSU.
 With DBBP, applying patch is more easier. PSU is conflict with DBBP, if you want to apply DBBP in your database which PSUs are installed, you have to rollback all PSUs to make sure applying DBBP successfully.
 Because DBBP covers more bug fixes than PSU, it's recommended to use DBBP to apply latest patches.
 <!--more-->
