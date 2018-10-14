@@ -1,12 +1,12 @@
 // $family-serif: "Ovo", "Georgia", "STZhongsong", "Microsoft YaHei", serif;
-$family-serif: "Optima", "Candara", "Calibri", "Arial", "sans-serif","Microsoft YaHei";
+$family-serif: "Calibri", "Ubuntu", "Arial", "sans-serif","Microsoft YaHei";
 // kkdba :       substitute font        --20181011
 $family-mono: "Source Code Pro", monospace, "Microsoft YaHei";
 $border-color: #dbdbdb;
 
 body, button, input, select, textarea {
     font-family: $family-serif;
-    font-size: 1.0rem;  //kkdba: add font size, default is 0.9rem;
+    font-size: 1.1rem;  //kkdba: add font size, default is 0.9rem;
 }
 
 #myarchive a:link {
@@ -26,6 +26,29 @@ body, button, input, select, textarea {
     // border-bottom-color: darkgray;
 }
 #myarchive a:active {
+}
+
+:not(.highlight) > table {
+  margin: 0 auto 1.5em auto;
+
+  tr {
+    background-color: #fff;
+    border-top: 1px dashed #ccc;
+    border-bottom: 1px dashed #ccc;
+
+    th, td {
+      padding: 6px 13px;
+      border: 1px dashed #ddd;
+    }
+
+    th {
+      font-weight: bold;
+    }
+  }
+
+  tr:nth-child(2n) {
+    background-color: #f8f8f8;
+  }
 }
 
 a.tag.article-tag {
