@@ -84,5 +84,12 @@ deploy:
 - type: git
   repo: https://git.coding.net/kyunkong/kyunkong.git
   branch: coding-pages
-  #
-  #
+# - type: rsync
+  # host: gcp
+  # user: kyunkong
+  # root: /blog/blog
+  # port: 22
+  # delete: true
+  # verbose: true
+  # ignore_errors: false
+

@@ -1,12 +1,13 @@
 // $family-serif: "Ovo", "Georgia", "STZhongsong", "Microsoft YaHei", serif;
-$family-serif: "Calibri", "Ubuntu", "Arial", "sans-serif","Microsoft YaHei";
+$family-serif: "Verdana","Calibri", "Ubuntu", "Arial", "sans-serif","Microsoft YaHei";
 // kkdba :       substitute font        --20181011
-$family-mono: "Source Code Pro", monospace, "Microsoft YaHei";
+$family-mono: "Source Code Pro", monospace, "Microsoft YaHei" "Ubuntu";
 $border-color: #dbdbdb;
 
 body, button, input, select, textarea {
     font-family:$family-serif;
-    font-size:1.0rem;  //kkdba: add font size, default is 0.9rem;
+    font-size:0.9rem;  //kkdba: add font size, default is 0.9rem;
+    color:black;
 }
 
 #myarchive a:link {

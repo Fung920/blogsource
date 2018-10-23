@@ -104,11 +104,20 @@ bosboot -a
 reboot
 ```
 
+* Setting parameters in instance level
+
+```sql
+alter system set lock_sga=TRUE scope=spfile;
+```
+> On AIX databases, USE_LARGE_PAGES parameter has NO impact.
+> These parameters are only valid for databases running on Linux, the value of this parameter even if set to FALSE will be ignored on AIX.
+
 After starting up instance, verify large pages is using:
 ```sh
 svmon -P SMON_PID
 vmstat -P all
 ```
+
 
 # 3. Disable transparent Hugepages in Linux
 MOS: [ALERT: Disable Transparent HugePages on SLES11, RHEL6, RHEL7, OL6, OL7, and UEK2 and above (Doc ID 1557478.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=325509027121186&parent=DOCUMENT&sourceId=361468.1&id=1557478.1&_afrWindowMode=0&_adf.ctrl-state=v1xoqgu3h_433)
