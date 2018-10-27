@@ -94,7 +94,7 @@ db2 update db cfg for mysample using HADR_REMOTE_SVC DB2_HADR01_P	--should be pr
 db2 update db cfg for mysample using HADR_REMOTE_INST db2v10i
 db2 update db cfg for mySAMPLE using HADR_SYNCMODE nearsync
 ```
-Be noticed, the value for <code>hadr_local_svc</code> on the primary or standby database systems cannot be the same as the value of svcename or svcename +1 on their corresponding hosts. For instance,my instance SVCENAME is 50000, then you cannot use 50000 or 50001 for the HADR service port.
+Be aware, the value for <code>hadr_local_svc</code> on the primary or standby database systems cannot be the same as the value of svcename or svcename +1 on their corresponding hosts. For instance,my instance SVCENAME is 50000, then you cannot use 50000 or 50001 for the HADR service port.
 #### 2.6 Start HADR on primary and standby
 Recommend startup standby first.
 ```

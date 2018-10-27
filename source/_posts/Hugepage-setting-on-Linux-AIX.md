@@ -17,7 +17,7 @@ HugePages is a method to have larger pages where it is useful for working with v
 The Hugapage concept is introduced in 2.6.23 kernel.
 
 # 2. How to set
-Be notice, Hugepage is conflict with AMM, __DO NOT use AMM while Hugepage is enabled__.
+Be aware, Hugepage is conflict with AMM, __DO NOT use AMM while Hugepage is enabled__.
 ## 2.1 Linux platform
 There's a script to calculate the Hugepage size in MOS: [Oracle Linux: Shell Script to Calculate Values Recommended Linux HugePages / HugeTLB Configuration (Doc ID 401749.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=324400953808653&parent=DOCUMENT&sourceId=361468.1&id=401749.1&_afrWindowMode=0&_adf.ctrl-state=v1xoqgu3h_150)
 

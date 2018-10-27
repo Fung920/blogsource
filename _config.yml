@@ -93,3 +93,6 @@ deploy:
   # verbose: true
   # ignore_errors: false
 
+# 中英文全角符号问题
+marked:
+  smartypants: false
