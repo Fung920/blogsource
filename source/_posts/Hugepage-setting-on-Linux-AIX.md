@@ -11,8 +11,9 @@ Nowadays, with inexpensive hardware cost, large memory is more and more popular 
 <!--more-->
 # 1. What is Hugepage
 HugePages is a method to have larger pages where it is useful for working with very large memory. It is both useful in 32- and 64-bit configurations. By default, Linux kernel manage memory by dividing 4K pages, with Hugepage, the pagesize is increased to 2MB, therefore, reduce total number of pages by Linux kernel, meanwhile, it reduce the amount of memory for managing the page table. Hugepages are not swappable, which avoiding performance issue by swapping.
-
-> From the Oracle Database perspective, with HugePages, the Linux kernel will use less memory to create pagetables to maintain virtual to physical mappings for SGA address range, in comparison to regular size pages. This makes more memory to be available for process-private computations or PGA usage.
+{% colorquote info %}
+From the Oracle Database perspective, with HugePages, the Linux kernel will use less memory to create pagetables to maintain virtual to physical mappings for SGA address range, in comparison to regular size pages. This makes more memory to be available for process-private computations or PGA usage.
+{% endcolorquote %}
 
 The Hugapage concept is introduced in 2.6.23 kernel.
 
@@ -26,7 +27,7 @@ The output should be like this:
 ...
 Recommended setting: vm.nr_hugepages = 67
 ```
-Add above values to `/etc/sysctl.con`, and execute `sysctl -p` to enable the configuration.
+Add above values to `/etc/sysctl.conf`, and execute `sysctl -p` to enable the configuration.
 
 MOS: [HugePages on Oracle Linux 64-bit (Doc ID 361468.1)](https://support.oracle.com/epmos/faces/SearchDocDisplay?_adf.ctrl-state=v1xoqgu3h_209&_afrLoop=325228706963147)
 
