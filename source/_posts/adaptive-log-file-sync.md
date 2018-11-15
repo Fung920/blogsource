@@ -49,7 +49,7 @@ NAME							VALUE
 redo synch poll writes					    0
 redo synch polls					    0
 ```
-From AWR, `other instance activity stats` also shows the `redo synch poll writes` and `redo synch pools` activities information.
+From AWR, `other instance activity stats` also shows the `redo synch poll writes` and `redo synch polls` activities information.
 
 Enabling adaptive log file sync may occur LGWR relative performance issue, from best practise, disable this feature is recommended:
 ```sql
@@ -61,6 +61,6 @@ In summary, conventional way will reduce the wait time of `log file sync`, but L
 And polling way, it reduce LGWR's overhead, because the COMMIT foreground process will sleep after it inform LGWR to write the changed data into log, hence the COMMIT process will wait more time for event `log file sync`. For large OLTP system, this mechanism is not suitable.
 
 Reference:
-[Adaptive Switching Between Log Write Methods can Cause ‘log file sync’ Waits (Doc ID 1462942.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=439981931225234&id=1462942.1&_adf.ctrl-state=kw6ghokkn_57)
+[Adaptive Switching Between Log Write Methods can Cause 'log file sync' Waits (Doc ID 1462942.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=439981931225234&id=1462942.1&_adf.ctrl-state=kw6ghokkn_57)
 [Adaptive Log File Sync Optimization (Doc ID 1541136.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=440133138964903&id=1541136.1&_adf.ctrl-state=kw6ghokkn_114)
 __EOF__

@@ -69,7 +69,7 @@ Excessive commit(5.2 user calls/user commit):
 If the `r` column of vmstat output is higher than CPU numbers, we can consider excessive consuming. Sometimes the IO response time is slower because of high CPU usages.
 ## 1.4 Bugs
 
-# 2. Relevant wait events
+# 2. Relevant factors
 In AWR report, some other wait events maybe company with `log file sync`. As shown previous top 10 event, `log buffer space` and `log file switch` also on the top 10 event.
 
 ## 2.1 _use_adaptive_log_file_sync
