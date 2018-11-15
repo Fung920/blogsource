@@ -87,8 +87,6 @@ Summary of metric v$ views:
    - v$sysmetric_summary - values  last hour (last snapshot)  like avg, max, min etc
    - v$sysmetric_history - last hour for 1 minute, last 3 mintes for 15 second deltas
 
--------------------
-
 * v$sess_time_model
     Displays the session-wide accumulated times for various operations.
 * v$sys_time_model
