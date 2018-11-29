@@ -24,13 +24,39 @@ When talking about Oracle performance tuning, DBAs always face some indices of t
     ```sql
     select count(*) from v$active_session_history
     where sample_time between xxx and xxx where session_type = 'FOREGROUND'
+
+    select ...,
+         sum(1) ash_secs
+    from v$active_session_history
+    where ...
+    group by ...
     ```
     Equals:
     ```sql
     select count(*) * 10 from dba_hist_active_sess_history
     where session_type = 'FOREGROUND'
     and sample_time between xxx and xxx;
+
+    select ...,
+         sum(10) ash_secs
+    from dba_hist_active_sess_history
+    where ...
+    group by ...
     ```
+
+* The "DB Time" in AWR is generated using the following query
+
+   ```sql
+   SELECT Round(NVL((e.value - s.value),-1)/60/1000000,2)||' minutes' "DB Time"
+   FROM   DBA_HIST_SYS_TIME_MODEL s,
+          DBA_HIST_SYS_TIME_MODEL e
+   WHERE  s.snap_id = &AWRStartSnapID AND
+          e.snap_id = &AWREndSnapID anD
+          e.dbid = s.dbid AND
+          e.instance_number = s.instance_number AND
+          s.stat_name = 'DB time' AND
+          e.stat_id = s.stat_id;
+   ```
 
 * Other tips
     ```sql
@@ -105,11 +131,15 @@ Summary of metric v$ views:
     Displays user session statistics
     "CPU used by this session" from v$sesstat changes only at the end of transaction.
 
-The corresponding value can be check here [Statistics Descriptions](https://docs.oracle.com/database/121/REFRN/GUID-2FBC1B7E-9123-41DD-8178-96176260A639.htm#REFRN-GUID-2FBC1B7E-9123-41DD-8178-96176260A639).
+The corresponding value can be checked here [Statistics Descriptions](https://docs.oracle.com/database/121/REFRN/GUID-2FBC1B7E-9123-41DD-8178-96176260A639.htm#REFRN-GUID-2FBC1B7E-9123-41DD-8178-96176260A639).
 
 v$sysstat and v$sys_time_model report CPU usage of current INSTANCE only, and v$osstat report CPU usage for whole OS.
 
 
 
+Reference:
+[How Does Oracle Calculate the "DB time" & "Elapsed" Time Presented in AWR Report (Doc ID 1934757.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=351475717319905&id=1934757.1&_adf.ctrl-state=mam88bc97_292)
+["DB CPU" / "CPU + Wait for CPU" / "CPU time" Reference Note (Doc ID 1965757.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=351511821391782&id=1965757.1&_adf.ctrl-state=mam88bc97_349)
+[How to Use AWR Reports to Diagnose Database Performance Issues (Doc ID 1359094.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=351735893689040&id=1359094.1&_adf.ctrl-state=mam88bc97_406)
 
 __EOF__

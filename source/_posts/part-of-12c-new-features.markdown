@@ -70,7 +70,7 @@ Now, truncate the table
 ```
 SQL> truncate table user_t;
 ```
-If in production environments, this table maybe still got some DML operations, in this situation, it's recommended that use remap approache to recover this table. 
+If in production environments, this table maybe still got some DBL operations, in this situation, it's recommended that use remap approach to recover this table. 
 ```
 #connect to CDB with RMAN
 RMAN> recover table fung.t of pluggable database pdb12c
@@ -109,7 +109,7 @@ Some restrictions in table-level recovery:
 - REMAP with NOT NULL constraints is not supported 
 
 #### 1.2 Data Recovery Advisor
-This feature only support non-CDB or single-database. It provide possible resolutions regarding data loss anylyze. 
+This feature only support non-DCB or single-database. It provide possible resolutions regarding data loss analyze. 
 ```
 #delete datafile by accidentally 
 ASMCMD [+data/ora12c/datafile] > rm -rf FUNG.259.907875155
