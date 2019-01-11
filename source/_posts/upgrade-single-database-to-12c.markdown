@@ -134,7 +134,7 @@ OLAP Analytic Workspace                            11.2.0.4.0      VALID
 Oracle OLAP API                                    11.2.0.4.0      VALID
 ```
 
-Before upgrade, it's recommend that change the archive log mode to no-archivelog mode.
+Before upgrade, it's recommended that change the archive log mode to no-archivelog mode.
 ```
 SQL> shutdown immediate
 SQL> startup mount

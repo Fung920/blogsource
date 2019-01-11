@@ -8,7 +8,7 @@ tags: database
 keywords: move file 
 description: how to move different types of files in oracle and DB2 database
 ---
-As a production DBA, we may meet some file moving requirements, such as move a data file from a filesystem to another filesystem, move redo log files, move control files, even move standard file system to ASM. This topic discuss how to relocate those files in Oracle database and how to migrate the whole tablespace in DB2 database. 
+As a production DBA, we may meet some file movement requirements, such as move a data file from a filesystem to another filesystem, move redo log files, move control files, even move standard file system to ASM. This topic discuss how to relocate those files in Oracle database and how to migrate the whole tablespace in DB2 database. 
 <!--more-->
 ### 1. Relocating files in Oracle database
 The most important file types in Oracle database are: data file, control file and redo log file, I'll show the most common approach to relocate these types of file. 
@@ -182,7 +182,7 @@ Address            TspId ContainNum Type    TotalPgs   UseablePgs PathID     Str
 0x00007FBAE70C3BE0 4     2          File    2560       2528       -          1          /data2/db2inst1/NODE0000/SQL00001/fung01.LRG
 0x00007FBAE70C3E10 4     3          File    2560       2528       -          1          /data2/db2inst1/NODE0000/SQL00001/fung02.LRG
 ```
-Then, drop old containers, rebalanceing will occur automatically in background. 
+Then, drop old containers, rebalancing will occur automatically in background. 
 ```
 [db2inst1@node1 ~]$ db2 "alter tablespace fung drop ( file '/data/db2inst1/NODE0000/SQL00001/fung01.LRG', 
 file '/data/db2inst1/NODE0000/SQL00001/fung02.LRG')"
