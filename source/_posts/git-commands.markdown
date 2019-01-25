@@ -33,7 +33,7 @@ git --version
 git version 2.7.4
 ```
 
-### 1.2 Identified yourself
+### 1.2 Identify yourself
 Git provide `git config` command enables you configure your username and email address with the github, `global` means all the configurations will use this setting for local machine.
 
 ```bash

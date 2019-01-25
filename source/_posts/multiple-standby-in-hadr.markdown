@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Multiple Standby in HADR"
+title: "Multiple Standbys in HADR"
 date: 2016-03-21 19:26:22
 comments: false
 categories: db2

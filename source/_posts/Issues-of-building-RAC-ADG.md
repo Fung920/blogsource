@@ -74,7 +74,7 @@ channel ORA_DISK_1: datafile copy complete, elapsed time: 00:05:15
 Finished backup at 2019-01-04 10:06:40
 ```
 
-scp the standby and catalog with it:
+scp to the standby and catalog with it:
 ```sql
 RMAN> catalog datafilecopy '/gglog/data319.dbf';
 

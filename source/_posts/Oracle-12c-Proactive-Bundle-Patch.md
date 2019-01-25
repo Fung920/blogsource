@@ -62,7 +62,7 @@ Execute below commands in one of instance(RAC) with Oracle user id:
 ```sql
 --for CDB
 alter pluggable database all open;
-$ORACLE_HOME/datapatch -verbose
+$ORACLE_HOME/OPatch/datapatch -verbose
 SQL> @?/rdbms/admin/utlrp.sql
 --If an OJVM PSU is installed or planned to be installed, no further actions are necessary. Otherwise, the workaround of using the OJVM Mitigation patch can be activated. As SYSDBA do the following from the admin directory
 SQL> @?/rdbms/admin/dbmsjdev.sql
@@ -83,7 +83,7 @@ ET LINESIZE 400
 COLUMN action_time FORMAT A20
 COLUMN action FORMAT A10
 COLUMN status FORMAT A10
-COLUMN description FORMAT A40
+COLUMN description FORMAT A45
 COLUMN version FORMAT A10
 COLUMN bundle_series FORMAT A10
 
