@@ -282,6 +282,34 @@ vi /etc/udev/rule.d/99-oracle-asmdevices.rules
 /sbin/udevadm trigger --type=devices --action=change
 ```
 
+* Find the UUID of the disk
+
+```
+udevadm info --query=all --name=/dev/mapper/mpathx | grep -i DM_UUID
+```
+
+* Create udev Rules
+
+```
+vi /etc/udev/rules.d/96-asm.rules
+ACTION=="add|change", ENV{DM_UUID}=="mpath-[DM_UUID]", SYMLINK+="udev-asmdisk1", GROUP="oinstall", OWNER="grid", MODE="0660"
+```
+
+* Reload udev Rules
+
+```
+udevadm control --reload-rules
+udevadm trigger --type=devices --action=change
+```
+
+* Verify the disks with sg_inq command
+
+```
+# su - grid
+$ sg_inq /dev/mapper/mpathx
+$ sg_inq /dev/dm-x
+```
+
 
 Reference:   
 [ID 1538626.1](https://support.oracle.com/epmos/faces/DocumentDisplay?id=1538626.1)   
