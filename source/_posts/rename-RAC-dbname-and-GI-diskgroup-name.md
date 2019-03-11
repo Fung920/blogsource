@@ -6,7 +6,7 @@ date: 2019-02-21 16:40:11
 tags: RAC
 ---
 
-Client wants to use Oracle OEM to manage all the database RACs, due to unoptimized plan of installation, they want to standardize naming conversion of DBNAME and diskgroup name, with `NID` utility, it's easy to modify the database name, but modify diskgroup name is a bit little complicated.
+Client wants to use Oracle OEM to manage all the database RACs, due to unoptimized plan of installation, they want to standardize naming conversion of DBNAME and diskgroup name, with `NID` utility, it's easy to modify the database name, but modify diskgroup name is a little bit complicated.
 
 <!--more-->
 # 1. Modify DBNAME with nid
@@ -243,15 +243,28 @@ $srvctl start database -d ccms
 # 3. Troubleshooting & Tips
 * Open resetlogs encountered ORA-01618
 
+```
+$ srvctl start database -d hist
+PRCR-1079 : Failed to start resource ora.hist.db
+CRS-5017: The resource action "ora.hist.db start" encountered the following error:
+ORA-01618: redo thread 2 is not enabled - cannot mount
+. For details refer to "(:CLSN00107:)" in "/grid/app/grid/diag/crs/histpdb02a/crs/trace/crsd_oraagent_oracle.trc".
+
+CRS-2674: Start of 'ora.hist.db' on 'histpdb02a' failed
+CRS-2632: There are no more servers to try to place resource 'ora.hist.db' on that would satisfy its placement policy
+```
+
+Solution: add logfile for thread 2, and enable thread2.
+
 ```sql
---Enable log thread 2 in node 1
-SQL> alter database enable thread 2;
 --Create log file in node 2
 ALTER DATABASE ADD LOGFILE THREAD 2
   GROUP 9 ('+DATADG') SIZE 4096M BLOCKSIZE 512,
   GROUP 10 ('+DATADG') SIZE 4096M BLOCKSIZE 512,
   GROUP 11 ('+DATADG') SIZE 4096M BLOCKSIZE 512,
   GROUP 12 ('+DATADG') SIZE 4096M BLOCKSIZE 512;
+--Enable log thread 2 in node 1
+SQL> alter database enable thread 2;
 ```
 
 Before using `renamedg`, all the diskgroups must be dismounted from all nodes, and it's recommended to specify `ask_disktrings` parameter in the command line. Otherwise, below error maybe occur:
