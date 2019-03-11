@@ -298,7 +298,7 @@ brw-rw---- 1 grid oinstall 252, 2 Jun 10 20:50 /dev/asmdisk1
 brw-rw---- 1 grid oinstall 252, 3 Jun 10 20:50 /dev/asmdisk2
 ```
 
-<h1>5、 RHEL 7 udev</h1>
+<h1>5. RHEL 7 udev</h1>
 
 ```
 #RHEL7.4 ASM udev加盘
@@ -308,4 +308,23 @@ vi /etc/udev/rule.d/99-oracle-asmdevices.rules
 --restart udev
 /sbin/udevadm trigger --type=devices --action=change
 ```
+
+* Udev rule
+
+```sh
+# 获取磁盘UUID
+[root@cmsdb02l rules.d]# udevadm info --query=all --name=/dev/mapper/ocr-disk01 |grep -i dm_uuid
+E: DM_UUID=mpath-36005c80058d78000000000001cd
+
+# 添加udev规则绑定multipath磁盘，vi 99-oracle-asmdevices.rules
+# OCR DISKs
+ACTION=="add|change", ENV{DM_UUID}=="mpath-36005c80058d78000000000001cd",SYMLINK+="asmdisk1", GROUP="oinstall", OWNER="grid", MODE="0660"
+ACTION=="add|change", ENV{DM_UUID}=="mpath-36005c80058d78000000000001ce", SYMLINK+="asmdisk2", GROUP="oinstall", OWNER="grid", MODE="0660"
+ACTION=="add|change", ENV{DM_UUID}=="mpath-36005c80058d78000000000001cf", SYMLINK+="asmdisk3", GROUP="oinstall", OWNER="grid", MODE="0660"
+
+# 重新加载udev
+udevadm trigger --type=devices --action=change
+
+```
+
  <b>EOF</b> 
