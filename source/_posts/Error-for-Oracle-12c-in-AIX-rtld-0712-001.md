@@ -11,7 +11,9 @@ During HA testing, I shutdown one of node of RAC in AIX, after rebooting, the no
 ```sh
 exec(): 0509-036 Cannot load program crsctl because of the following errors:
 
-rtld: 0712-001 Symbol CreateIoCompletionPort was referenced from module /opt/oracle/product/12.1.0/lib/libttsh12.so(), but a runtime definition of the symbol was not found.
+rtld: 0712-001 Symbol CreateIoCompletionPort was
+referenced from module /opt/oracle/product/12.1.0/lib/libttsh12.so(),
+but a runtime definition of the symbol was not found.
 ```
 
 This is due to incorrect setting of AIX IOCP.

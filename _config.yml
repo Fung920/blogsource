@@ -84,14 +84,14 @@ deploy:
 - type: git
   repo: https://git.coding.net/kyunkong/kyunkong.git
   branch: coding-pages
-# - type: rsync
-  # host: gcp
-  # user: kyunkong
-  # root: /blog/blog
-  # port: 22
-  # delete: true
-  # verbose: true
-  # ignore_errors: false
+- type: rsync
+  host: linora
+  user: kyunkong
+  root: /blog/html
+  port: 2048
+  delete: true
+  verbose: true
+  ignore_errors: false
 
 # 中英文全角符号问题
 marked:
