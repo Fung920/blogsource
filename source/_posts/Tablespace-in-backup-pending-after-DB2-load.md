@@ -33,11 +33,11 @@ From the inforcenter of load command, load have three options which would impact
    ___With this option, table spaces are not put in backup pending state following the load operation, and a copy of the loaded data does not have to be made during the load operation. If one of COPY NO, COPY YES, or NONRECOVERABLE is not specified, and the database is not recoverable (logretain or logarchmeth1 is not enabled), then NONRECOVERABLE is the default___.
 
 
-From the explanation, impacted database because in non-archive log mode, therefore default is `nonrecoverabel` option, after enabling archive log, the default behavior is change to `copy no`, which  would put database/tablespace in backup pending mode.
+From the explanation, impacted database because in non-archive log mode, therefore default is `nonrecoverable` option, after enabling archive log, the default behavior is change to `copy no`, which  would put database/tablespace in backup pending mode.
 
 With customer's environment, they don't want to change the load command. But no worries, there's a db2set registry `DB2_LOAD_COPY_NO_OVERRIDE` can achive this.
 
-This registry also have three options that identical to  load command: `copy no`, `copy yes` and `nonrecoverable`, after setting this registry to `nonrecoverable`(no recycle will be needed), issue is gone.
+This registry also have three options that identical to  load command: `copy no`, `copy yes` and `nonrecoverable`, after setting this registry to `nonrecoverable`(no instance recycle will be needed), issue is gone.
 This registry will be ignored in HADR standby database. Only applicable for primary database.
 
 __But because `nonrecvoerable` will not recover loaded table from redo log, it's highly recommended to take a full backup after load__.
