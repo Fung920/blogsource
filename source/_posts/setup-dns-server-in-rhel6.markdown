@@ -77,9 +77,9 @@ zone "." IN {
 	file "named.ca";
 };
 
-zone "oraclema.com" IN {   		//add forward zone file
+zone "kkdba.com" IN {   		//add forward zone file
         type master;
-        file "node1.oraclema.zero";  	//this zone file should be located at /var/named/
+        file "node1.kkdba.zero";  	//this zone file should be located at /var/named/
         allow-update { none; };
 };
 
@@ -97,22 +97,22 @@ include "/etc/named.root.key";
 
 ``` bash
 [root@node1 ~]# cd /var/named/
-[root@node1 ~]# cp /var/named/named.localhost /var/named/node1.oraclema.zero
+[root@node1 ~]# cp /var/named/named.localhost /var/named/node1.kkdba.zero
 [root@node1 ~]# cp /var/named/named.localhost /var/named/56.168.192.local
 [root@node1 named]# ls -ltr
 ...
--rw-r----- 1 root  named 1345 Apr 18 17:22 node1.oraclema.zero
+-rw-r----- 1 root  named 1345 Apr 18 17:22 node1.kkdba.zero
 -rw-r----- 1 root  named 1099 Apr 18 17:24 56.168.192.local
-[root@node1 named]# cat node1.oraclema.zero
+[root@node1 named]# cat node1.kkdba.zero
 $TTL    86400
-@               IN SOA  node1.oraclema.com.      root.oraclema.com. (
+@               IN SOA  node1.kkdba.com.      root.kkdba.com. (
                                         42              ; serial (d. adams)
                                         3H              ; refresh
                                         15M             ; retry
                                         1W              ; expiry
                                         1D )            ; minimum
-@        IN      NS      node1.oraclema.com.
-@        IN      NS      node2.oraclema.com.
+@        IN      NS      node1.kkdba.com.
+@        IN      NS      node2.kkdba.com.
 @	IN	A	192.168.56.110
 @       IN      A       192.168.56.111
 @       IN      A       192.168.56.112
@@ -130,15 +130,15 @@ node2                            IN A     192.168.56.102
 
 [root@node1 named]# cat 56.168.192.local
 $TTL    86400
-@       IN      SOA     node1.oraclema.com. root.oraclema.com.  (
+@       IN      SOA     node1.kkdba.com. root.kkdba.com.  (
                                       1997022700 ; Serial
                                       28800      ; Refresh
                                       14400      ; Retry
                                       3600000    ; Expire
                                       86400 )    ; Minimum
-@        IN      NS      node1.oraclema.com.
-@        IN      NS      node2.oraclema.com.
-@        IN      PTR	oraclema.com
+@        IN      NS      node1.kkdba.com.
+@        IN      NS      node2.kkdba.com.
+@        IN      PTR	kkdba.com
 node1	IN	A	192.68.56.101
 node2	IN	A	192.168.56.102
 node1-vip	IN	A	192.168.56.103
@@ -146,21 +146,21 @@ node2-vip	IN	A	192.168.56.104
 racdb-scan	IN	A	192.168.56.110
 racdb-scan      IN      A       192.168.56.111
 racdb-scan      IN      A       192.168.56.112
-101      IN      PTR     node1.oraclema.com.
-102      IN      PTR     node2.oraclema.com.
-110      IN      PTR     racdb-scan.oraclema.com.
-111      IN      PTR     racdb-scan.oraclema.com.
-112      IN      PTR     racdb-scan.oraclema.com.
-102      IN      PTR     node1-vip.oraclema.com.
-103      IN      PTR     node2-vip.oraclema.com.
+101      IN      PTR     node1.kkdba.com.
+102      IN      PTR     node2.kkdba.com.
+110      IN      PTR     racdb-scan.kkdba.com.
+111      IN      PTR     racdb-scan.kkdba.com.
+112      IN      PTR     racdb-scan.kkdba.com.
+102      IN      PTR     node1-vip.kkdba.com.
+103      IN      PTR     node2-vip.kkdba.com.
 ```
 
 After edited the forward and reserve files, run a error test.
 
 ```
 [root@node1 named]# named-checkconf /etc/named.conf
-[root@node1 named]# named-checkzone oraclema.com ./node1.oraclema.zero
-zone oraclema.com/IN: loaded serial 42
+[root@node1 named]# named-checkzone kkdba.com ./node1.kkdba.zero
+zone kkdba.com/IN: loaded serial 42
 OK
 [root@node1 named]# named-checkzone 56.168.192.in-addr.arpa ./56.168.192.local
 zone 56.168.192.in-addr.arpa/IN: loaded serial 1997022700
@@ -179,37 +179,37 @@ Starting named:                                            [  OK  ]
 Finally, take a look at <code>dig</code> and <code>nslookup</code> command to check whether can resolve the domain or not:
 
 ```
-[root@node1 named]# dig node1.oraclema.com
+[root@node1 named]# dig node1.kkdba.com
 
-; <<>> DiG 9.8.2rc1-RedHat-9.8.2-0.17.rc1.el6_4.6 <<>> node1.oraclema.com
+; <<>> DiG 9.8.2rc1-RedHat-9.8.2-0.17.rc1.el6_4.6 <<>> node1.kkdba.com
 ;; global options: +cmd
 ;; Got answer:
 ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 56422
 ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 1
 
 ;; QUESTION SECTION:
-;node1.oraclema.com.		IN	A
+;node1.kkdba.com.		IN	A
 
 ;; ANSWER SECTION:
-node1.oraclema.com.	86400	IN	A	192.168.56.101
+node1.kkdba.com.	86400	IN	A	192.168.56.101
 
 ;; AUTHORITY SECTION:
-oraclema.com.		86400	IN	NS	node2.oraclema.com.
-oraclema.com.		86400	IN	NS	node1.oraclema.com.
+kkdba.com.		86400	IN	NS	node2.kkdba.com.
+kkdba.com.		86400	IN	NS	node1.kkdba.com.
 
 ;; ADDITIONAL SECTION:
-node2.oraclema.com.	86400	IN	A	192.168.56.102
+node2.kkdba.com.	86400	IN	A	192.168.56.102
 
 ;; Query time: 1 msec
 ;; SERVER: 192.168.56.101# 53(192.168.56.101)
 ;; WHEN: Mon Apr 18 18:02:13 2016
 ;; MSG SIZE  rcvd: 102
 
-[root@node1 named]# nslookup node1.oraclema.com
+[root@node1 named]# nslookup node1.kkdba.com
 Server:		192.168.56.101
 Address:	192.168.56.101# 53
 
-Name:	node1.oraclema.com
+Name:	node1.kkdba.com
 Address: 192.168.56.101
 ```
 
@@ -264,9 +264,9 @@ zone "." IN {
 	file "named.ca";
 };
 
-zone "oraclema.com" IN {   			//define forward zone file
+zone "kkdba.com" IN {   			//define forward zone file
         type slave;
-        file "slaves/node1.oraclema.zero";
+        file "slaves/node1.kkdba.zero";
         masters { 192.168.56.101; };
 };
 
@@ -295,50 +295,50 @@ The two zone files are generated automatically by named process:
 [root@node2 ~]# ls -l /var/named/slaves/
 total 8
 -rw-r--r-- 1 named named 720 Apr  8 21:53 56.168.192.local
--rw-r--r-- 1 named named 691 Apr 18 16:43 node1.oraclema.zero
+-rw-r--r-- 1 named named 691 Apr 18 16:43 node1.kkdba.zero
 ```
 
 #### 2.3 Check the resolve result
 
 ```
-[root@node2 ~]# dig node2.oraclema.com
+[root@node2 ~]# dig node2.kkdba.com
 
-; <<>> DiG 9.8.2rc1-RedHat-9.8.2-0.17.rc1.el6_4.6 <<>> node2.oraclema.com
+; <<>> DiG 9.8.2rc1-RedHat-9.8.2-0.17.rc1.el6_4.6 <<>> node2.kkdba.com
 ;; global options: +cmd
 ;; Got answer:
 ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 9104
 ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 1
 
 ;; QUESTION SECTION:
-;node2.oraclema.com.		IN	A
+;node2.kkdba.com.		IN	A
 
 ;; ANSWER SECTION:
-node2.oraclema.com.	86400	IN	A	192.168.56.102
+node2.kkdba.com.	86400	IN	A	192.168.56.102
 
 ;; AUTHORITY SECTION:
-oraclema.com.		86400	IN	NS	node1.oraclema.com.
-oraclema.com.		86400	IN	NS	node2.oraclema.com.
+kkdba.com.		86400	IN	NS	node1.kkdba.com.
+kkdba.com.		86400	IN	NS	node2.kkdba.com.
 
 ;; ADDITIONAL SECTION:
-node1.oraclema.com.	86400	IN	A	192.168.56.101
+node1.kkdba.com.	86400	IN	A	192.168.56.101
 
 ;; Query time: 1 msec
 ;; SERVER: 192.168.56.101# 53(192.168.56.101)
 ;; WHEN: Mon Apr 18 19:05:23 2016
 ;; MSG SIZE  rcvd: 102
-[root@node2 ~]# nslookup node1.oraclema.com
+[root@node2 ~]# nslookup node1.kkdba.com
 Server:		192.168.56.101
 Address:	192.168.56.101# 53
 
-Name:	node1.oraclema.com
+Name:	node1.kkdba.com
 Address: 192.168.56.101
 
 [root@node2 ~]# nslookup 192.168.56.102
 Server:		192.168.56.101
 Address:	192.168.56.101# 53
 
-102.56.168.192.in-addr.arpa	name = node1-vip.oraclema.com.
-102.56.168.192.in-addr.arpa	name = node2.oraclema.com.
+102.56.168.192.in-addr.arpa	name = node1-vip.kkdba.com.
+102.56.168.192.in-addr.arpa	name = node2.kkdba.com.
 102.56.168.192.in-addr.arpa	name = node2.
 102.56.168.192.in-addr.arpa	name = node1-vip.
 ```
@@ -352,13 +352,13 @@ For this scenario, the node1 and node2 both can be treated as clients.
 ``` bash [Edit the hostname]
 [root@node1 ~]# cat /etc/sysconfig/network
 NETWORKING=yes
-HOSTNAME=node1.oraclema.com
+HOSTNAME=node1.kkdba.com
 GATEWAY=192.168.56.1
 NOZEROCONF=yes
 [root@node1 ~]# hostname
-node1.oraclema.com
+node1.kkdba.com
 ```
-No need to manually change hostname to node1.oraclema.com, when named services is effective, the hostname can turn to node1.oraclema.com automatically.
+No need to manually change hostname to node1.kkdba.com, when named services is effective, the hostname can turn to node1.kkdba.com automatically.
 
 #### 3.2 Edit Network Interface Card setting
 
@@ -367,7 +367,7 @@ This step can generate /etc/resolve.conf file as specified automatically.  Addin
 ``` bash [Edit NIC Configuration]
 DNS1=192.168.56.101
 DNS2=192.168.56.102
-DOMAIN=oraclema.com
+DOMAIN=kkdba.com
 ```
 
 #### 3.3 Change the resolve order

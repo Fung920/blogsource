@@ -26,7 +26,7 @@ Port xxx    # from 0 ~ 65535
 ```
 But don't use any port from range 0 to 1024, most of them are known port for other important service, such as HTTP 80 port.
 
-* 1.3 Disable password authentication
+* 1.3 Enable two-factor authorization
 
 Using RSA public keys instead:
 ```
@@ -35,6 +35,17 @@ ssh-keygen -t rsa
 
 # copy public key to remote server
 ssh-copy-id -i ~/.ssh/id_rsa.pub <Your Username for remote server>@<Your IP or Hostname> -p <Your SSH port>
+```
+
+Enable two factor authentication:
+
+```
+RSAAuthentication yes
+PubkeyAuthentication yes
+AuthorizedKeysFile	.ssh/authorized_keys
+PasswordAuthentication yes
+
+AuthenticationMethods publickey,password
 ```
 
 # 2. Firewall configuration

@@ -28,21 +28,21 @@ date: 2014-3-25 13:00:00
 # that require network functionality will fail. 
 127.0.0.1 localhost.localdomain localhost 
 #public IP 
-192.168.56.101 node1.oraclema.com node1 
-192.168.56.102 node2.oraclema.com node2
+192.168.56.101 node1.kkdba.com node1 
+192.168.56.102 node2.kkdba.com node2
 
  #priv 
 10.10.10.101 node1-prv 
 10.10.10.102 node2-prv 
 
  #Virtual IP 
-192.168.56.103 node1-vip.oraclema.com node1-vip 
-192.168.56.104 node2-vip.oraclema.com node2-vip 
+192.168.56.103 node1-vip.kkdba.com node1-vip 
+192.168.56.104 node2-vip.kkdba.com node2-vip 
 
  #SCAN 
-#192.168.56.110 racdb-scan.oraclema.com racdb-scan 
-#192.168.56.111 racdb-scan.oraclema.com racdb-scan 
-#192.168.56.112 racdb-scan.oraclema.com racdb-scan 
+#192.168.56.110 racdb-scan.kkdba.com racdb-scan 
+#192.168.56.111 racdb-scan.kkdba.com racdb-scan 
+#192.168.56.112 racdb-scan.kkdba.com racdb-scan 
 ```
  以上node1为DNS服务器。
 ```
@@ -152,9 +152,9 @@ zone "." IN {
         allow-update { none; }; 
 }; 
 #Add new zone 
-zone "oraclema.com" IN {   
+zone "kkdba.com" IN {   
         type master;   
-        file "node1.oraclema.zero";   
+        file "node1.kkdba.zero";   
         allow-update { none; };   
 };   
    
@@ -168,59 +168,59 @@ zone "56.168.192.in-addr.arpa" IN {
 ```
 [root@node1:/var/named/chroot/etc]# cd ../var/named/ 
 [root@node1:/var/named/chroot/var/named]# cp -p named.local 56.168.192.local 
-[root@node1:/var/named/chroot/var/named]# cp -p named.zero node1.oraclema.zero 
-[root@node1:/var/named/chroot/var/named]# cat node1.oraclema.zero  
+[root@node1:/var/named/chroot/var/named]# cp -p named.zero node1.kkdba.zero 
+[root@node1:/var/named/chroot/var/named]# cat node1.kkdba.zero  
 $TTL    86400   
-@               IN SOA  node1.oraclema.com.      root.oraclema.com. (   
+@               IN SOA  node1.kkdba.com.      root.kkdba.com. (   
                                         42              ; serial (d. adams)   
                                         3H              ; refresh   
                                         15M             ; retry   
                                         1W              ; expiry   
                                         1D )            ; minimum   
-        IN      NS      node1.oraclema.com.   
+        IN      NS      node1.kkdba.com.   
 racdb-scan                       IN A     192.168.56.110 
 racdb-scan                       IN A     192.168.56.111 
 racdb-scan                       IN A     192.168.56.112 
-racdb-scan.oraclema.com          IN A     192.168.56.110 
-racdb-scan.oraclema.com          IN A     192.168.56.111 
-racdb-scan.oraclema.com          IN A     192.168.56.112 
+racdb-scan.kkdba.com          IN A     192.168.56.110 
+racdb-scan.kkdba.com          IN A     192.168.56.111 
+racdb-scan.kkdba.com          IN A     192.168.56.112 
 node1-vip                        IN A     192.168.56.103 
 node2-vip                        IN A     192.168.56.104 
-node1-vip.oraclema.com           IN A     192.168.56.103 
-node2-vip.oraclema.com           IN A     192.168.56.104 
+node1-vip.kkdba.com           IN A     192.168.56.103 
+node2-vip.kkdba.com           IN A     192.168.56.104 
 node1                            IN A     192.168.56.101 
 node2                            IN A     192.168.56.102 
-node1.oraclema.com               IN A     192.168.56.101 
-node2.oraclema.com               IN A     192.168.56.102 
+node1.kkdba.com               IN A     192.168.56.101 
+node2.kkdba.com               IN A     192.168.56.102 
 [root@node1:/var/named/chroot/var/named]# cat 56.168.192.local  
 $TTL    86400   
-@       IN      SOA     node1.oraclema.com. root.oraclema.com.  (   
+@       IN      SOA     node1.kkdba.com. root.kkdba.com.  (   
                                       1997022700 ; Serial   
                                       28800      ; Refresh   
                                       14400      ; Retry   
                                       3600000    ; Expire   
                                       86400 )    ; Minimum   
-        IN      NS      node1.oraclema.com.   
-1        IN      PTR     node1.oraclema.com. 
-101      IN      PTR     node1.oraclema.com. 
-102      IN      PTR     node2.oraclema.com. 
+        IN      NS      node1.kkdba.com.   
+1        IN      PTR     node1.kkdba.com. 
+101      IN      PTR     node1.kkdba.com. 
+102      IN      PTR     node2.kkdba.com. 
 101      IN      PTR     node1. 
 102      IN      PTR     node2. 
-110      IN      PTR     racdb-scan.oraclema.com.   
-111      IN      PTR     racdb-scan.oraclema.com. 
-112      IN      PTR     racdb-scan.oraclema.com.   
+110      IN      PTR     racdb-scan.kkdba.com.   
+111      IN      PTR     racdb-scan.kkdba.com. 
+112      IN      PTR     racdb-scan.kkdba.com.   
 110      IN      PTR     racdb-scan.   
 111      IN      PTR     racdb-scan.   
 112      IN      PTR     racdb-scan.   
 102      IN      PTR     node1-vip.   
 103      IN      PTR     node2-vip.   
-102      IN      PTR     node1-vip.oraclema.com.    
-103      IN      PTR     node2-vip.oraclema.com. 
+102      IN      PTR     node1-vip.kkdba.com.    
+103      IN      PTR     node2-vip.kkdba.com. 
 ```
 添加/etc/resolv.conf，重启named服务，并且在当前节点测试：
 ```
 [root@node1:/root]# cat /etc/resolv.conf 
-search oraclema.com 
+search kkdba.com 
 nameserver 192.168.56.101 
 [root@node1:/root]# /etc/init.d/named restart 
 Stopping named: .[ OK ] 
@@ -229,22 +229,22 @@ Starting named: [ OK ]
 Server: 192.168.56.101 
 Address: 192.168.56.101#53
 
- Name: racdb-scan.oraclema.com 
+ Name: racdb-scan.kkdba.com 
 Address: 192.168.56.110 
-Name: racdb-scan.oraclema.com 
+Name: racdb-scan.kkdba.com 
 Address: 192.168.56.111 
-Name: racdb-scan.oraclema.com 
+Name: racdb-scan.kkdba.com 
 Address: 192.168.56.112 
 
- [root@node1:/root]# nslookup racdb-scan.oraclema.com 
+ [root@node1:/root]# nslookup racdb-scan.kkdba.com 
 Server: 192.168.56.101 
 Address: 192.168.56.101#53 
 
- Name: racdb-scan.oraclema.com 
+ Name: racdb-scan.kkdba.com 
 Address: 192.168.56.112 
-Name: racdb-scan.oraclema.com 
+Name: racdb-scan.kkdba.com 
 Address: 192.168.56.110 
-Name: racdb-scan.oraclema.com 
+Name: racdb-scan.kkdba.com 
 Address: 192.168.56.111 
 
  [root@node1:/root]# nslookup 192.168.56.111 
@@ -252,7 +252,7 @@ Server: 192.168.56.101
 Address: 192.168.56.101#53 
 
 111.56.168.192.in-addr.arpa name = racdb-scan. 
-111.56.168.192.in-addr.arpa name = racdb-scan.oraclema.com.
+111.56.168.192.in-addr.arpa name = racdb-scan.kkdba.com.
 ```
 Another question: 
 测试环境原来为hosts解析，scan ip只有一个IP，现在增加了两个，但目前集群仍旧只识别出一个IP，需要对CRS做更新，具体如下，请参考MOS： 
