@@ -395,7 +395,7 @@ DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE DORECOVER;
 exit;
 EOF
 ```
-11g新特性，增加PARAMETER_VALUE_CONVERT参数，可参见[Duplicate Database With RMAN](/oracle/duplicate-database-with-rman.html)最后一点。
+11g新特性，增加PARAMETER_VALUE_CONVERT参数，可参见[Duplicate Database With RMAN](/duplicate-database-with-rman.html)最后一点。
 ```
 #For single to single
 DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE
