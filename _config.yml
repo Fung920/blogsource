@@ -82,8 +82,8 @@ deploy:
   repo: https://github.com/Fung920/fung920.github.io
   branch: master
 - type: git
-  repo: https://git.coding.net/kyunkong/kyunkong.git
-  branch: coding-pages
+  #repo: https://git.coding.net/kyunkong/kyunkong.git
+  #branch: coding-pages
 - type: rsync
   host: linora
   user: kyunkong

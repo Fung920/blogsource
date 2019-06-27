@@ -30,11 +30,11 @@ As of 12c, a new feature is supported by Oracle database — Asynchronous Global
 
   
 
-  # 2. Scheduler Jobs
+# 2. Scheduler Jobs
 
-  There's an automatically maintenance scheduler job `SYS.PMO_DEFERRED_GIDX_MAINT_JOB` to clean up all global indexes. This job is schedule at 2:00AM by defaul. You can run this job at any time by calling `DBMS_SCHEDULER.RUN_JOB`,also, DBA can modify scheduler window for running this job.
+There's an automatically maintenance scheduler job `SYS.PMO_DEFERRED_GIDX_MAINT_JOB` to clean up all global indexes. This job is schedule at 2:00AM by defaul. You can run this job at any time by calling `DBMS_SCHEDULER.RUN_JOB`,also, DBA can modify scheduler window for running this job.
 
-  ```sql
+```sql
   -- query the maintenance window
   select job_name , start_date,enabled,state,comments
   from dba_scheduler_jobs
@@ -42,9 +42,17 @@ As of 12c, a new feature is supported by Oracle database — Asynchronous Global
   
   -- execute the job manually
   exec dbms_scheduler.run_job('SYS.PMO_DEFERRED_GIDX_MAINT_JOB')
-  ```
 
-  # 3. Summary
+  -- query jobs running status
+  select job_name, start_date, enabled, state, comments
+   from dba_scheduler_jobs
+   where job_name ='PMO_DEFERRED_GIDX_MAINT_JOB';
+
+   select * from dba_scheduler_job_run_details
+   where job_name ='PMO_DEFERRED_GIDX_MAINT_JOB';
+```
+
+# 3. Summary
 
   If we truncate/drop a partition tables with `update indexes`, we can maintenance index manually:
 
@@ -62,7 +70,11 @@ As of 12c, a new feature is supported by Oracle database — Asynchronous Global
   * Execute one of the following SQLs
 
     ```sql
-    -- This PL/SQL package procedure gathers the list of global indexes in the system that may require cleanup and runs the operations necessary to restore the indexes to a clean state.
+    /* This PL/SQL package procedure gathers 
+    the list of global indexes in the system that
+    may require cleanup and runs the operations necessary
+    to restore the indexes to a clean state.
+    */
     exec DBMS_PART.CLEANUP_GIDX('USERNAME','INDEX_NAME'); -- specific index
     --database level
     exec dbms_part.cleanup_gidx
