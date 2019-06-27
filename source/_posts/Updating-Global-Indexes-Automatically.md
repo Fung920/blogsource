@@ -41,7 +41,7 @@ As of 12c, a new feature is supported by Oracle database — Asynchronous Global
   where job_name ='PMO_DEFERRED_GIDX_MAINT_JOB';
   
   -- execute the job manually
-  exec SYS.PMO_DEFERRED_GIDX_MAINT_JOB;
+  exec dbms_scheduler.run_job('SYS.PMO_DEFERRED_GIDX_MAINT_JOB')
   ```
 
   # 3. Summary

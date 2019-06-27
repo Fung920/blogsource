@@ -88,7 +88,7 @@ deploy:
   host: linora
   user: kyunkong
   root: /blog/html
-  port: 2048
+  port: 1521
   delete: true
   verbose: true
   ignore_errors: false
