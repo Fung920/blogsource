@@ -87,7 +87,8 @@ There's an automatically maintenance scheduler job `SYS.PMO_DEFERRED_GIDX_MAINT_
     ```
 
     ```
-    -- this SQL statement rebuilds the entire index or index partition as was done prior to Oracle Database 12.1 releases
+    -- this SQL statement rebuilds the entire index
+    -- or index partition as was done prior to Oracle Database 12.1 releases
     ALTER INDEX INDEX_NAME REBUILD;
     
     --This SQL statement cleans up any orphaned entries in index blocks

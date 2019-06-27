@@ -81,7 +81,7 @@ deploy:
 - type: git
   repo: https://github.com/Fung920/fung920.github.io
   branch: master
-- type: git
+  #- type: git
   #repo: https://git.coding.net/kyunkong/kyunkong.git
   #branch: coding-pages
 - type: rsync
