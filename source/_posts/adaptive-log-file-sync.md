@@ -6,7 +6,7 @@ date: 2018-10-15 22:48:22
 tags: tuning
 ---
 
-From Oracle 11.2.0.3, hidden parameter `_use_adaptive_log_file_sync` are changed default value from FALSE to TRUE.
+From Oracle 11.2.0.3, hidden parameter `_use_adaptive_log_file_sync` is changed default value from FALSE to TRUE.
 Quote from Oracle community:[_use_adaptive_log_file_sync](https://community.oracle.com/thread/3520420)
 When `_use_adaptive_log_file_sync` is set to true, Oracle switches between two methods of communication between the LGWR and foreground processes to acknowledge that a commit has completed:
    * Post/wait - conventional method available in previous Oracle releases.

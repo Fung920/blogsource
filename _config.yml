@@ -3,10 +3,10 @@
 ## Source: https://github.com/hexojs/hexo/
 
 # Site
-title: My Notebook
+title: My scratchpad
 subtitle: Oracle memoranda of Kyun Kong
 description: Oracle memoranda
-keywords:
+keywords: oracle, database
 author: Kyun Kong
 language: en
 timezone: Asia/Shanghai

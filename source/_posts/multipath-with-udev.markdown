@@ -29,6 +29,7 @@ defaults {
 ```
 ### 2.配置multipath.conf
 通过<code>scsi_id</code>命令找出磁盘wwid，并按照模板写入multipath.conf
+RHEL 7 scsi_id为`/lib/udev/scsi_id`.
 ```
 [root@orl6 ~]# for i in a b c d;
 > do 
@@ -293,6 +294,13 @@ udevadm info --query=all --name=/dev/mapper/mpathx | grep -i DM_UUID
 ```
 vi /etc/udev/rules.d/96-asm.rules
 ACTION=="add|change", ENV{DM_UUID}=="mpath-[DM_UUID]", SYMLINK+="udev-asmdisk1", GROUP="oinstall", OWNER="grid", MODE="0660"
+
+--or
+for i in b c d e
+do
+echo "KERNEL==\"sd*\", SUBSYSTEM==\"block\", PROGRAM==\"/usr/lib/udev/scsi_id --whitelisted --replace-whitespace --device=/dev/\$name\", RESULT==\"`/usr/lib/udev/scsi_id --whitelisted --replace-whitespace --device=/dev/sd$i`\", SYMLINK+=\"asm-disk$i\", OWNER=\"grid\", GROUP=\"asmadmin\", MODE=\"0660\""      
+done
+
 ```
 
 * Reload udev Rules

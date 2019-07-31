@@ -310,6 +310,20 @@ SQL> select count(*) from fung.object;
 ```
 impdp system/oracle schemas=fung directory=expdir sqlfile=fung.sql dumpfile=fung.dmp
 ```
+
+<h4>3.3 query用法</h4>
+```
+expdp hr tables=mytest dumpfile=mytest.dmp logfile=mytest.log query=mytest:\"where rownum \< 5\"
+
+expdp hr tables=mytest dumpfile=mytest.dmp logfile=mytest.log query=\"where inc_datetime \<= to_date\(\'2019/01/02\',\'yyyy/mm/dd\'\)\"
+
+-- 多表
+expdp hr tables=mytest,mytest2 dumpfile=mytest.dmp logfile=mytest.log query=mytest:\"where inc_datetime \<= to_date\(\'2019/01/02\',\'yyyy/mm/dd\'\)\", mytest2:\"where rownum = 5\"
+```
+
+
+
+
 <h3>4. wrap-up</h3>
 1. 不同版本导入导出，需遵循一个原则：低版本导出，高版本导入。  
 2. 在10.2.0.1版本中，不支持network_link导入导出11g，跟compatible参数有关，带确认。  
