@@ -1,5 +1,5 @@
 ---
-title: OCR Voting disk replace or move on 11g and above
+title: OCR Voting disk replacement or movement
 categories: oracle
 comments: false
 date: 2019-07-31 16:38:10
