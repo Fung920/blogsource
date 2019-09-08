@@ -3,7 +3,7 @@ title: Updating Global Indexes Automatically
 categories: oracle
 comments: false
 date: 2019-06-26 10:38:29
-tags:
+tags: partitioning
 ---
 
 By default, partition table maintenance such as drop/truncate partitions invalidate corresponding global index which mark them as `UNUSABLE`. User must rebuild the corresponding indexes. Database lets user override the default behavior by specifying `update indexes` clause. With this option, database will update the indexes at the same time it executes the maintenance  DDL statements,  and not mark them as `UNUSABLE`.
@@ -97,7 +97,8 @@ There's an automatically maintenance scheduler job `SYS.PMO_DEFERRED_GIDX_MAINT_
 
   * Check the index status again
 
-
-
+</br>
+Reference:
+[ORA-01555 Caused By Auto Execute Of Job "SYS"."PMO_DEFERRED_GIDX_MAINT_JOB" (Doc ID 2523018.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=465970265177832&id=2523018.1&_afrWindowMode=0&_adf.ctrl-state=hy44rkzga_293)
 
 __EOF__

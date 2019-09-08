@@ -4,7 +4,7 @@ title: "ASM utilities"
 date: 2015-06-24 11:19:54
 comments: false
 categories: oracle
-tags: ASM
+tags: asm
 keywords: ASM
 description: ASM Utilities,kfed,kfod,AMDU
 ---

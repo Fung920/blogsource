@@ -175,7 +175,48 @@ Fast-Start Failover: DISABLED
 Configuration Status:
 SUCCESS
 ```
+
+#### 2.5 通过broker设置参数
+
+查询当前数据库配置详细信息:
+```sql
+show database verbose primary;
+```
+
+* 修改同步模式
+
+```sql
+EDIT DATABASE 'STANDBY' SET PROPERTY 'LogXptMode'='SYNC';
+EDIT DATABASE 'STANDBY' SET PROPERTY 'LogXptMode'='ASYNC';
+```
+
+* 修改备库日志应用模式
+
+```sql
+EDIT DATABASE 'STANDBY' SET STATE='APPLY-OFF';
+EDIT DATABASE 'STANDBY' SET STATE='APPLY-ON';
+```
+
+* 修改保护模式
+
+```sql
+EDIT CONFIGURATION SET PROTECTION MODE AS MAXAVAILABILITY;
+```
+
+* 修改主库传输模式
+
+```sql
+edit database 'PRIMARY' set STATE='TRANSPORT-OFF';
+edit database 'PRIMARY' set STATE='TRANSPORT-ON';
+```
+
 ### 3. switchover
+* 切换前validate备库
+
+```sql
+DGMGRL> validate database verbose standby
+```
+
 如果是RAC，无论主备库，只保留一个节点实例，其他的关闭：
 ```
 [oracle@fung02:/home/oracle]$ srvctl stop instance -d rac11g -o immediate -i rac11g2
@@ -250,34 +291,4 @@ DGMGRL> start observer;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+__EOF__

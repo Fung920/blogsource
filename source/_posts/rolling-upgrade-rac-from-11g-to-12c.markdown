@@ -4,7 +4,7 @@ title: "Rolling Upgrade RAC from 11g to 12c"
 date: 2016-04-21 14:32:22
 comments: false
 categories: oracle
-tags: upgrade, 12c
+tags: [upgrade, 12c]
 keywords: rolling upgrade grid infrastructure
 description: Rolling upgrade RAC from 11g to 12c
 name: Rolling Upgrade RAC from 11g to 12c

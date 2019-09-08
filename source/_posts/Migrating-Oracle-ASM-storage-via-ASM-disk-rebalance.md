@@ -305,9 +305,9 @@ cluvfy comp ocr -n all -verbose
 crsctl check cluster -all
 ```
 
-# 6. Optional method of migrating
+# 6. Alternative way of migrating
 
-Below steps are available for online migration, we also can use rman copy to migrate, which need to stop database.
+Previous steps are available for online migration, we also can use rman copy to migrate, which need to stop database.
 
 Assume we've create a new diskgroup named DATA_NEW, our purpose is to restore the whole database to DATA_NEW diskgroup.
 

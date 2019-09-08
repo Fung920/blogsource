@@ -357,7 +357,48 @@ INCLUDE=INDEX:"LIKE 'EMP%'"
 ```
 expdp hr/hr parfile=hr.par
 ```
+### 6. Finding out status of expdp/impdp
+
+* DBA_DATAPUMP_JOBS
+```sql
+select owner_name, job_name, operation, job_mode
+from dba_datapump_jobs
+where state='EXECUTING' ;
+
+OWNER_NAME JOB_NAME           OPERATION JOB_MODE
+---------- ------------------ --------- --------
+SYSTEM     SYS_IMPORT_FULL_01 IMPORT    FULL
+```
+
+* DBA_DATAPUMP_SESSIONS
+```sql
+select owner_name, job_name, session_type
+from dba_datapump_sessions;
+
+select v.status, v.sid,v.serial#,io.block_changes,event
+from v$sess_io io, v$session v
+where io.sid = v.sid
+and v.saddr in (
+    select saddr
+    from dba_datapump_sessions
+) order by sid;
+```
+
+* Wait event for datapump
+```sql
+select s.sid, s.module, s.state,
+       substr(s.event, 1, 21) as event,
+       s.seconds_in_wait as secs,
+       substr(sql.sql_text, 1, 30) as sql_text
+from v$session s
+join v$sql sql on sql.sql_id = s.sql_id
+where s.module like 'Data Pump%'
+order by s.module, s.sid;
+```
+
+
+
 Reference:  
-[https://docs.oracle.com/cd/B19306_01/server.102/b14215/dp_export.htm#i1007837](https://docs.oracle.com/cd/B19306_01/server.102/b14215/dp_export.htm#i1007837) 
+[https://docs.oracle.com/cd/B19306_01/server.102/b14215/dp_export.htm#i1007837](https://docs.oracle.com/cd/B19306_01/server.102/b14215/dp_export.htm#i1007837)
 
-
+__EOF__

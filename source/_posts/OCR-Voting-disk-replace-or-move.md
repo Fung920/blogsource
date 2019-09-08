@@ -5,7 +5,7 @@ comments: false
 date: 2019-07-31 16:38:10
 tags: how to
 ---
-Essentially speaking, OCR disk is a two-way ASM disk, which can be replace via ASM disk rebalance method.
+Essentially speaking, OCR disk is a two-way ASM disk, which can be replaced via ASM disk rebalance method.
 This post introduces another method by `ocrconfig` tool.
 Assume we've created a new diskgroup name OCR_NEW to replace old diskgroup OCR. ___Pay attention to compatible.asm parameter of diskgroup.___
 <!--more-->

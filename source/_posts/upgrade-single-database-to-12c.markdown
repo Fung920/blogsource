@@ -4,7 +4,7 @@ title: "Upgrade single database to 12c"
 date: 2016-03-25 15:03:33
 comments: false
 categories: oracle
-tags: upgrade, 12c
+tags: [upgrade, 12c]
 keywords: upgrade Oracle to 12c
 description: upgrade Oracle database to 12c and convert it to PDB
 ---

@@ -3,7 +3,7 @@ title: Rename RAC dbname and GI diskgroup name
 categories: oracle
 comments: false
 date: 2019-02-21 16:40:11
-tags: RAC
+tags: rac
 ---
 
 Customer wants to use Oracle OEM to manage all the database RACs, due to unoptimized plan of installation, they want to standardize naming conversion of DBNAME and diskgroup name, with `NID` utility, it's easy to modify the database name, but modify diskgroup name is a little bit complicated.
