@@ -271,6 +271,7 @@ SUCCESS
 ```
 
 * 主备库添加archive_lag参数
+
 ```sql
 DGMGRL>
 edit database sdcdb set property 'ArchiveLagTarget' = '1800';
