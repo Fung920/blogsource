@@ -48,7 +48,7 @@ no failures found that match specification
 MOS上有一个bug，怀疑是这个bug引起的：
 [Bug 21495155 - data guard broker configuration shows ORA-16843 in RAC (Doc ID 21495155.8)](https://support.oracle.com/epmos/faces/DocumentDisplay?_afrLoop=16551594274140&id=21495155.8&displayIndex=1&_afrWindowMode=0&_adf.ctrl-state=i1oiz6ciq_81)
 
-__Workround__:
+__Workaround__:
 删除ADR下面的`HM_FINDING.ams`文件：
 ```sql
 [oracle@ztdb diag]$ find ./ -name "metadata"
