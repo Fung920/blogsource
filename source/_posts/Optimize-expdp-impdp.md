@@ -29,12 +29,12 @@ directory=xxx dumpfile=xxx.dmp
 ```sql
 --生成DDl语句
 impdp system/manager@xxxx directory=xxx dumpfile=xxx.dmp \
-sqlfile=xxx.sql include=constraints, indexes
+sqlfile=xxx.sql include=constraint,index
 ```
 根据sql语句保留约束、索引的创建语句再进行导入：
 ```sql
 impdp system/xxxxxxxx directory=datapump dumpfile=xxx.dump \
-EXCLUDE=STATISTICS,constraints,indexes \
+EXCLUDE=STATISTICS,constraint,index \
 remap_tablespace=aaaa:bbbb parallel=4 \
 remap_schema=xxx:xxx transform=disable_archive_logging:Y
 ```
