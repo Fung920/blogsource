@@ -318,10 +318,30 @@ $ sg_inq /dev/mapper/mpathx
 $ sg_inq /dev/dm-x
 ```
 
+附:
+RHEL 7 udev with multipath生成脚本
+```sh
+#!/usr/bin/env bash
+#########################################################################
+# File Name:     udev.sh
+# Author:        Fung Kong
+# Mail:          kyun.kong@gmail.com
+# Created Time:  2019-10-24 09:21:57
+# Description:   Generate udev rule file for Oracle ASM using DM-multipath
+#                Platform: RHEL 7
+#########################################################################
+ASM_NAME=`multipath -ll |grep dm- |awk '{print $1}'`
+for i in ${ASM_NAME};
+do
+echo "ACTION==\"add|change\", ENV{DM_UUID}==\"mpath-`/usr/lib/udev/scsi_id -g -u /dev/mapper/${i}`\", SYMLINK+=\"asm-${i}\", GROUP=\"asmadmin\", OWNER=\"grid\", MODE=\"0660\""
+done
+```
+
 
 Reference:   
 [ID 1538626.1](https://support.oracle.com/epmos/faces/DocumentDisplay?id=1538626.1)   
 [ID 1521757.1](https://support.oracle.com/epmos/faces/DocumentDisplay?id=1521757.1)   
+[How to set udev rules in OL7 related to ASM on multipath disks (Doc ID 2101679.1)](https://support.oracle.com/epmos/faces/DocumentDisplay?id=2101679.1&_adf.ctrl-state=qjqy71312_52&_afrLoop=409942200426500)
 
 </br>
 <b>EOF</b>

@@ -327,4 +327,22 @@ udevadm trigger --type=devices --action=change
 
 ```
 
+脚本：
+```sh
+#!/usr/bin/env bash
+#########################################################################
+# File Name:     udev.sh
+# Author:        Fung Kong
+# Mail:          kyun.kong@gmail.com
+# Created Time:  2019-10-24 09:21:57
+# Description:   Generate udev rule file for Oracle ASM using DM-multipath
+#                Platform: RHEL 7
+#########################################################################
+ASM_NAME=`multipath -ll |grep dm- |awk '{print $1}'`
+for i in ${ASM_NAME};
+do
+echo "ACTION==\"add|change\", ENV{DM_UUID}==\"mpath-`/usr/lib/udev/scsi_id -g -u /dev/mapper/${i}`\", SYMLINK+=\"asm-${i}\", GROUP=\"asmadmin\", OWNER=\"grid\", MODE=\"0660\""
+done
+```
+
  <b>EOF</b> 
