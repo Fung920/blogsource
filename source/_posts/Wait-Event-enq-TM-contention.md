@@ -4,6 +4,8 @@ categories: oracle
 comments: false
 date: 2019-09-16 09:19:11
 tags:
+- tuning
+- wait interface
 ---
 开发人员反应在进行大量insert操作时，速度很慢，平时只要几分钟，但目前跑了几个小时仍旧没结束。
 

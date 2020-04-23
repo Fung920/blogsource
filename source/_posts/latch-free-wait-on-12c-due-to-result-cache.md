@@ -3,8 +3,9 @@ title: Oracle 12c开启结果集缓存导致大量latch free等待
 categories: oracle
 comments: false
 date: 2020-04-20 15:47:38
-tags: latch free
-      result cache
+tags: 
+- latch free
+- result cache
 ---
 最近在业务监控上，发现某个更新模块自4月9日起延时较高，从AWR看，`latch free`等待特别高，且平均等待时间也比较长。
 ![latch free](/images/latch_free.jpg)
